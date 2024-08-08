@@ -1,0 +1,12 @@
+# requirements.txt
+# Requires Python 3.10 or higher
+
+# Standard libraries for image processing
+scipy==1.7.3
+numpy==1.21.4
+
+# Configuration handling
+configparser==5.2.0
+
+# Additional libraries (if needed)
+matplotlib==3.5.0
