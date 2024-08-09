@@ -6,26 +6,26 @@ def create_config_file(filename):
     config = configparser.ConfigParser()
 
     config['InverseCompositionalAlgorithm'] = {
-        'TOL': '1e-5',
-        'transform_type': 'Affine',
+        'TOL': '1e-3',
+        'transform_type': 'EUCLIDEAN', #TRANSLATION, EUCLIDEAN, SIMILARITY, AFFINITY, HOMOGRAPHY
         'verbose': 'True'
     }
 
     config['RobustInverseCompositionalAlgorithm'] = {
-        'TOL': '1e-5',
-        'transform_type': 'Affine',
-        'robust_type': 'Huber',
-        'lambda': '0.5',
+        'TOL': '1e-3',
+        'transform_type': 'EUCLIDEAN', #TRANSLATION, EUCLIDEAN, SIMILARITY, AFFINITY, HOMOGRAPHY
+        'robust_type': 'CHARBONNIER', #QUADRATIC, TRUNCATED_QUADRATIC, GERMAN_MCCLURE, LORENTZIAN, CHARBONNIER
+        'lambda': '0.0',
         'verbose': 'True'
     }
 
     config['PyramidalInverseCompositionalAlgorithm'] = {
-        'TOL': '1e-5',
-        'transform_type': 'Affine',
-        'pyramid_levels': '3',
+        'TOL': '1e-3',
+        'transform_type': 'EUCLIDEAN', #TRANSLATION, EUCLIDEAN, SIMILARITY, AFFINITY, HOMOGRAPHY
+        'pyramid_levels': '5',
         'nu': '0.5',
-        'robust_type': 'Huber',
-        'lambda': '0.5',
+        'robust_type': 'CHARBONNIER', #QUADRATIC, TRUNCATED_QUADRATIC, GERMAN_MCCLURE, LORENTZIAN, CHARBONNIER
+        'lambda': '0.0',
         'verbose': 'True'
     }
 

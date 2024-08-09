@@ -2,26 +2,26 @@ import numpy as np
 from enum import Enum
 
 class TransformType(Enum):
-    TRANSLATION_TRANSFORM = 1
-    EUCLIDEAN_TRANSFORM = 2
-    SIMILARITY_TRANSFORM = 3
-    AFFINITY_TRANSFORM = 4
-    HOMOGRAPHY_TRANSFORM = 5
+    TRANSLATION = 1
+    EUCLIDEAN = 2
+    SIMILARITY = 3
+    AFFINITY = 4
+    HOMOGRAPHY = 5
 
     def nparams(self):
         """
         Returns the number of parameters for the given transformation type.
         """
         match self:
-            case TransformType.TRANSLATION_TRANSFORM:
+            case TransformType.TRANSLATION:
                 return 2
-            case TransformType.EUCLIDEAN_TRANSFORM:
+            case TransformType.EUCLIDEAN:
                 return 3
-            case TransformType.SIMILARITY_TRANSFORM:
+            case TransformType.SIMILARITY:
                 return 4
-            case TransformType.AFFINITY_TRANSFORM:
+            case TransformType.AFFINITY:
                 return 6
-            case TransformType.HOMOGRAPHY_TRANSFORM:
+            case TransformType.HOMOGRAPHY:
                 return 8
             case _:
                 raise ValueError("Unknown transform type")
@@ -40,11 +40,11 @@ def update_transform(p, dp, transform_type):
         None
     """
     match transform_type:
-        case TransformType.TRANSLATION_TRANSFORM:
+        case TransformType.TRANSLATION:
             nparams = 2
             p[:nparams] -= dp[:nparams]
         
-        case TransformType.EUCLIDEAN_TRANSFORM:
+        case TransformType.EUCLIDEAN:
             nparams = 3
             a = np.cos(dp[2])
             b = np.sin(dp[2])
@@ -60,7 +60,7 @@ def update_transform(p, dp, transform_type):
             p[1] = dp_val - bp * (a * c + b * d) + ap * (b * c - a * d)
             p[2] = np.arctan2(sint, cost)
         
-        case TransformType.SIMILARITY_TRANSFORM:
+        case TransformType.SIMILARITY:
             nparams = 4
             a = dp[2]
             b = dp[3]
@@ -77,7 +77,7 @@ def update_transform(p, dp, transform_type):
                 p[2] = b * bp / det + (a + 1) * (ap + 1) / det - 1
                 p[3] = -b * (ap + 1) / det + bp * (a + 1) / det
         
-        case TransformType.AFFINITY_TRANSFORM:
+        case TransformType.AFFINITY:
             nparams = 6
             a = dp[2]
             b = dp[3]
@@ -100,7 +100,7 @@ def update_transform(p, dp, transform_type):
                 p[4] = (dp_val * (1 + e) - d - d * ep) / det
                 p[5] = (a + ep + a * ep + 1 - b * dp_val) / det - 1
         
-        case TransformType.HOMOGRAPHY_TRANSFORM:
+        case TransformType.HOMOGRAPHY:
             nparams = 8
             a = dp[0]
             b = dp[1]
@@ -145,23 +145,23 @@ def project(x, y, p, transform_type):
     Returns:
         tuple: The transformed coordinates (xp, yp).
     """
-    if transform_type == TransformType.TRANSLATION_TRANSFORM:
+    if transform_type == TransformType.TRANSLATION:
         # p = (tx, ty)
         xp = x + p[0]
         yp = y + p[1]
-    elif transform_type == TransformType.EUCLIDEAN_TRANSFORM:
+    elif transform_type == TransformType.EUCLIDEAN:
         # p = (tx, ty, theta)
         xp = np.cos(p[2]) * x - np.sin(p[2]) * y + p[0]
         yp = np.sin(p[2]) * x + np.cos(p[2]) * y + p[1]
-    elif transform_type == TransformType.SIMILARITY_TRANSFORM:
+    elif transform_type == TransformType.SIMILARITY:
         # p = (tx, ty, a, b)
         xp = (1 + p[2]) * x - p[3] * y + p[0]
         yp = p[3] * x + (1 + p[2]) * y + p[1]
-    elif transform_type == TransformType.AFFINITY_TRANSFORM:
+    elif transform_type == TransformType.AFFINITY:
         # p = (tx, ty, a00, a01, a10, a11)
         xp = (1 + p[2]) * x + p[3] * y + p[0]
         yp = p[4] * x + (1 + p[5]) * y + p[1]
-    elif transform_type == TransformType.HOMOGRAPHY_TRANSFORM:
+    elif transform_type == TransformType.HOMOGRAPHY:
         # p = (h00, h01, ..., h21)
         d = p[6] * x + p[7] * y + 1
         xp = ((1 + p[0]) * x + p[1] * y + p[2]) / d
@@ -185,31 +185,31 @@ def params2matrix(p, transform_type):
     """
     matrix = np.identity(3)
     
-    if transform_type == TransformType.TRANSLATION_TRANSFORM:
+    if transform_type == TransformType.TRANSLATION:
         matrix[0, 2] = p[0]
         matrix[1, 2] = p[1]
-    elif transform_type == TransformType.EUCLIDEAN_TRANSFORM:
+    elif transform_type == TransformType.EUCLIDEAN:
         matrix[0, 0] = np.cos(p[2])
         matrix[0, 1] = -np.sin(p[2])
         matrix[0, 2] = p[0]
         matrix[1, 0] = np.sin(p[2])
         matrix[1, 1] = np.cos(p[2])
         matrix[1, 2] = p[1]
-    elif transform_type == TransformType.SIMILARITY_TRANSFORM:
+    elif transform_type == TransformType.SIMILARITY:
         matrix[0, 0] = 1 + p[2]
         matrix[0, 1] = -p[3]
         matrix[0, 2] = p[0]
         matrix[1, 0] = p[3]
         matrix[1, 1] = 1 + p[2]
         matrix[1, 2] = p[1]
-    elif transform_type == TransformType.AFFINITY_TRANSFORM:
+    elif transform_type == TransformType.AFFINITY:
         matrix[0, 0] = 1 + p[2]
         matrix[0, 1] = p[3]
         matrix[0, 2] = p[0]
         matrix[1, 0] = p[4]
         matrix[1, 1] = 1 + p[5]
         matrix[1, 2] = p[1]
-    elif transform_type == TransformType.HOMOGRAPHY_TRANSFORM:
+    elif transform_type == TransformType.HOMOGRAPHY:
         matrix[0, 0] = 1 + p[0]
         matrix[0, 1] = p[1]
         matrix[0, 2] = p[2]

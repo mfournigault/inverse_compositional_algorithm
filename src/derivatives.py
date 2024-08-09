@@ -1,6 +1,6 @@
 import numpy as np
 from matrix_operators import AtA, sAtA
-from transformations import TransformType
+from transformation import TransformType
 
 
 def jacobian(transform_type, nx, ny):
@@ -23,7 +23,7 @@ def jacobian(transform_type, nx, ny):
     J = np.zeros((2 * nx * ny, nparams))
 
     match transform_type:
-        case TransformType.TRANSLATION_TRANSFORM:
+        case TransformType.TRANSLATION:
             for i in range(nx * ny):
                 c = 2 * i * nparams
                 J[c] = 1.0
@@ -31,7 +31,7 @@ def jacobian(transform_type, nx, ny):
                 J[c + 2] = 0.0
                 J[c + 3] = 1.0
 
-        case TransformType.EUCLIDEAN_TRANSFORM:
+        case TransformType.EUCLIDEAN:
             for i in range(ny):
                 for j in range(nx):
                     c = 2 * (i * nx + j) * nparams
@@ -42,7 +42,7 @@ def jacobian(transform_type, nx, ny):
                     J[c + 4] = 1.0
                     J[c + 5] = j
 
-        case TransformType.SIMILARITY_TRANSFORM:
+        case TransformType.SIMILARITY:
             for i in range(ny):
                 for j in range(nx):
                     c = 2 * (i * nx + j) * nparams
@@ -55,7 +55,7 @@ def jacobian(transform_type, nx, ny):
                     J[c + 6] = i
                     J[c + 7] = j
 
-        case TransformType.AFFINITY_TRANSFORM:
+        case TransformType.AFFINITY:
             for i in range(ny):
                 for j in range(nx):
                     c = 2 * (i * nx + j) * nparams
@@ -72,7 +72,7 @@ def jacobian(transform_type, nx, ny):
                     J[c + 10] = j
                     J[c + 11] = i
 
-        case TransformType.HOMOGRAPHY_TRANSFORM:
+        case TransformType.HOMOGRAPHY:
             for i in range(ny):
                 for j in range(nx):
                     c = 2 * (i * nx + j) * nparams

@@ -2,7 +2,7 @@ import numpy as np
 from scipy.ndimage import gaussian_filter
 from scipy.ndimage import map_coordinates
 
-from transformations import TransformType
+from transformation import TransformType
 import constants as cts
 
 def zoom_size(nx: int, ny: int, factor: float) -> tuple[int, int]:
@@ -84,26 +84,26 @@ def zoom_in_parameters(p: np.ndarray, transformation_type: TransformType, nx: in
 
     # Adjust parameters based on the transformation type
     match transformation_type:
-        case TransformType.TRANSLATION_TRANSFORM:
+        case TransformType.TRANSLATION:
             pout[0] = p[0] * nu
             pout[1] = p[1] * nu
-        case TransformType.EUCLIDEAN_TRANSFORM:
+        case TransformType.EUCLIDEAN:
             pout[0] = p[0] * nu
             pout[1] = p[1] * nu
             pout[2] = p[2]
-        case TransformType.SIMILARITY_TRANSFORM:
+        case TransformType.SIMILARITY:
             pout[0] = p[0] * nu
             pout[1] = p[1] * nu
             pout[2] = p[2]
             pout[3] = p[3]
-        case TransformType.AFFINITY_TRANSFORM:
+        case TransformType.AFFINITY:
             pout[0] = p[0] * nu
             pout[1] = p[1] * nu
             pout[2] = p[2]
             pout[3] = p[3]
             pout[4] = p[4]
             pout[5] = p[5]
-        case TransformType.HOMOGRAPHY_TRANSFORM:
+        case TransformType.HOMOGRAPHY:
             pout[0] = p[0]
             pout[1] = p[1]
             pout[2] = p[2] * nu

@@ -1,5 +1,5 @@
 import numpy as np
-import transformations as tf
+import transformation as tf
 
 def neumann_bc(x: int, nx: int) -> tuple[int, bool]:
     """
