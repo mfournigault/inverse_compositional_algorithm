@@ -10,3 +10,4 @@ configparser==5.2.0
 
 # Additional libraries (if needed)
 matplotlib==3.5.0
+imageio==2.34.2
