@@ -25,33 +25,34 @@ def inverse_compositional_algorithm(I1, I2, p, transform_type, TOL, verbose):
     :return: The updated transformation parameters.
     """
     # Define nx, ny, nz from the shape of I1 and I2
-    ny, nx, nz = I1.shape
+    ny, nx, nz = I1.shape # suppose that I1 and I2 are not flattened
 
     # Verify the dimensions of I1 and I2
     if I1.shape != I2.shape:
         raise ValueError("I1 and I2 must have the same dimensions")
 
     # Sanity check on the value of TOL
-    if TOL <= 0.01:
+    if TOL >= 0.01:
         raise ValueError("TOL must be positive and very small (less than 0.01)")
     
     nparams = transform_type.nparams()
 
+    #TODO: correction all the function and subfunctions to work with non flat images and matrices
     size1 = nx * ny * nz
     size2 = size1 * nparams
     size3 = nparams * nparams
     size4 = 2 * nx * ny * nparams
 
-    Ix = np.zeros(size1)  # x derivative of the first image
-    Iy = np.zeros(size1)  # y derivative of the first image
-    Iw = np.zeros(size1)  # warp of the second image
-    DI = np.zeros(size1)  # error image (I2(w)-I1)
-    DIJ = np.zeros(size2)  # steepest descent images
+    Ix = np.zeros(I1.shape)  # x derivative of the first image
+    Iy = np.zeros(I1.shape)  # y derivative of the first image
+    Iw = np.zeros(I1.shape)  # warp of the second image
+    DI = np.zeros(I1.shape)  # error image (I2(w)-I1)
+    DIJ = np.zeros((ny, nx, nz, nparams))  # steepest descent images
     dp = np.zeros(nparams)  # incremental solution
     b = np.zeros(nparams)  # steepest descent images
-    J = np.zeros(size4)  # jacobian matrix for all points
-    H = np.zeros(size3)  # Hessian matrix
-    H_1 = np.zeros(size3)  # inverse Hessian matrix
+    J = np.zeros((ny, nx, 2 * nparams))  # jacobian matrix for all points
+    H = np.zeros((nparams, nparams))  # Hessian matrix
+    H_1 = np.zeros((nparams, nparams))  # inverse Hessian matrix
 
     # Evaluate the gradient of I1
     for channel in range(nz):
@@ -62,11 +63,13 @@ def inverse_compositional_algorithm(I1, I2, p, transform_type, TOL, verbose):
     J = de.jacobian(nparams, nx, ny)
     
     # Compute the steepest descent images
+    # Ix, Iy are supposed to be flattened
     DIJ = io.steepest_descent_images(Ix, Iy, J, nparams, nx, ny, nz)
+    # DIJ is flattened
     
     # Compute the Hessian matrix
-    H = de.hessian(DIJ, nparams, nx, ny, nz)
-    H_1 = de.inverse_hessian(H, nparams)
+    H = de.hessian(DIJ, nparams, nx, ny, nz) # H is not flattened
+    H_1 = de.inverse_hessian(H, nparams) # H_1 is not flattened
     
     # Iterate
     error = 1E10
@@ -78,13 +81,13 @@ def inverse_compositional_algorithm(I1, I2, p, transform_type, TOL, verbose):
         
         # Compute the error image (I1-I2w)
         # difference_image(I1, Iw, DI, nx, ny, nz)
-        DI = Iw - I
+        DI = Iw - I1
         
         # Compute the independent vector
-        b = io.independent_vector(DIJ, DI, nparams, nx, ny, nz)
+        b = io.independent_vector(DIJ, DI, nparams, nx, ny, nz) # b is flattened
         
         # Solve equation and compute increment of the motion 
-        error, dp = io.parametric_solve(H_1, b, nparams)
+        error, dp = io.parametric_solve(H_1, b, nparams) # H_1 is not flattened, b is flattened
         
         # Update the warp x'(x;p) := x'(x;p) * x'(x;dp)^-1
         p = tr.update_transform(p, dp, transform_type)
@@ -138,7 +141,7 @@ def robust_inverse_compositional_algorithm(
         raise ValueError("I1 and I2 must have the same dimensions")
 
     # Sanity check on the value of TOL
-    if TOL <= 0.01:
+    if TOL >= 0.01:
         raise ValueError("TOL must be positive and very small (less than 0.01)")
 
     nparams = transform_type.nparams()
@@ -148,6 +151,7 @@ def robust_inverse_compositional_algorithm(
     size3 = nparams * nparams
     size4 = 2 * nx * ny * nparams
 
+    #TODO: correction all the function and subfunctions to work with non flat images and matrices
     Ix = np.zeros(size1)   # x derivative of the first image
     Iy = np.zeros(size1)   # y derivative of the first image
     Iw = np.zeros(size1)   # warp of the second image
@@ -182,7 +186,7 @@ def robust_inverse_compositional_algorithm(
 
         # Compute the error image (I1-I2w)
         # difference_image(I1, Iw, DI, nx, ny, nz)
-        DI = Iw - I
+        DI = Iw - I1
 
         # Compute robustification function
         rho = io.robust_error_function(DI, lambda_it, robust_type, nx, ny, nz)
@@ -221,9 +225,6 @@ def pyramidal_inverse_compositional_algorithm(
     I2,     # second image
     p,      # parameters of the transform
     transform_type, # typeof transformation
-    nxx,     # image width
-    nyy,     # image height
-    nzz,     # number of color channels in image  
     nscales, # number of scales
     nu,      # downsampling factor
     TOL,     # stopping criterion threshold
@@ -239,9 +240,6 @@ def pyramidal_inverse_compositional_algorithm(
         I2: Second image.
         p: Parameters of the transform.
         transform_type: type of transformation to recover.
-        nxx: Image width.
-        nyy: Image height.
-        nzz: Number of color channels in image.
         nscales: Number of scales.
         nu: Downsampling factor.
         TOL: Stopping criterion threshold.
@@ -260,19 +258,24 @@ def pyramidal_inverse_compositional_algorithm(
         raise ValueError("I1 and I2 must have the same dimensions")
 
     # Sanity check on the value of TOL
-    if TOL <= 0.01:
+    if TOL >= 0.01:
         raise ValueError("TOL must be positive and very small (less than 0.01)")
     
+    #TODO: correction all the function and subfunctions to work with non flat images and matrices
     nparams = transform_type.nparams()
     size = nxx * nyy * nzz
-    I1s = np.zeros(nscales, size)
-    I2s = np.zeros(nscales, size)
-    ps = np.zeros(nscales, nparams)
+    I1s = np.zeros((nscales, size))
+    I2s = np.zeros((nscales, size))
+    ps = np.zeros((nscales, nparams))
     nx = np.zeros(nscales)
     ny = np.zeros(nscales)
 
-    I1s[0] = np.copy(I1).reshape((nyy, nxx, nzz))
-    I2s[0] = np.copy(I2).reshape((nyy, nxx, nzz))
+    # I1s[0] = np.copy(I1).reshape((nyy, nxx, nzz))
+    temp = np.copy(I1).reshape((nyy, nxx, nzz))
+    I1s[0] = temp
+    # I2s[0] = np.copy(I2).reshape((nyy, nxx, nzz))
+    temp = np.copy(I2).reshape((nyy, nxx, nzz))
+    I2s[0] = temp
     ps[0] = np.copy(p)
     nx[0] = nxx
     ny[0] = nyy

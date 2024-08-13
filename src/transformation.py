@@ -1,5 +1,6 @@
 import numpy as np
 from enum import Enum
+from skimage import transform
 
 class TransformType(Enum):
     TRANSLATION = 1
@@ -220,3 +221,47 @@ def params2matrix(p, transform_type):
         matrix[2, 1] = p[7]
     
     return matrix
+
+
+def transform_image(image, transformation_type, gt):
+    """
+    Transforms an image based on the specified transformation type and geometric transformation parameters.
+
+    Parameters:
+    - `image` (ndarray): The input image to be transformed.
+    - `transformation_type` (TransformType): The type of transformation to apply. It can be one of the following:
+    - `TransformType.AFFINITY`: Affine transformation.
+    - `TransformType.SIMILARITY`: Similarity transformation.
+    - `TransformType.EUCLIDEAN`: Euclidean transformation.
+    - `gt` (list or array): The geometric transformation parameters. The expected format depends on the `transformation_type`:
+        - For `TransformType.AFFINITY`: [tx, ty, a00, a01, a10, a11]
+        - For `TransformType.SIMILARITY`: [tx, ty, scale, rotation]
+        - For `TransformType.EUCLIDEAN`: [tx, ty, theta]
+        - angles of rotation are in radians counter-clockwise.
+    """
+    if all(np.abs(value) < 1e-10 for value in gt):
+        # Identity transformation
+        tform = transform.AffineTransform(matrix=np.eye(3))
+    else:
+        hmatrix = params2matrix(gt, transformation_type)
+        if transformation_type == TransformType.AFFINITY:
+            tform = transform.AffineTransform(matrix=hmatrix)
+        elif transformation_type == TransformType.SIMILARITY:
+            # Similarity transformation, we expect gt as [tx, ty, a, b]
+            # skimage considers the rotation in clockwise direction, so we need to negate it
+            # tform = transform.SimilarityTransform(scale=gt[2], rotation=gt[3], translation=(gt[0], gt[1]))
+            tform = transform.SimilarityTransform(matrix=hmatrix)
+        elif transformation_type == TransformType.EUCLIDEAN:
+            # Euclidean transformation, we expect gt as [tx, ty, theta]
+            # skimage considers the rotation in clockwise direction, so we need to negate it
+            tform = transform.EuclideanTransform(rotation=gt[2], translation=(gt[0], gt[1]))
+            # tform = transform.EuclideanTransform(matrix=hmatrix)
+        elif transformation_type == TransformType.HOMOGRAPHY:
+            tform = transform.ProjectiveTransform(matrix=hmatrix)
+        else:
+            raise ValueError("Unsupported transformation type")
+
+    print("gt", gt)
+    print("tform", tform.params)
+    transformed_image = transform.warp(image, tform.inverse)
+    return transformed_image

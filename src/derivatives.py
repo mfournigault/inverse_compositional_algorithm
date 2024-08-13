@@ -93,14 +93,17 @@ def jacobian(transform_type, nx, ny):
                     J[c + 14] = -j * i
                     J[c + 15] = -i * i
 
+    J = J.reshape((ny, nx, 2 * nparams))
+
     return J
 
     
-def hessian(DIJ, nparams, nx, ny, nz):
+def hessian(DIJ):
     """
     Function to compute the Hessian matrix.
     The Hessian is equal to DIJ^T * DIJ.
     """
+    ny, nx, nz, nparams = DIJ.shape[0], DIJ.shape[1], DIJ.shape[2], DIJ.shape[3]
     # Initialize the Hessian to zero
     H = np.zeros((nparams, nparams))
     

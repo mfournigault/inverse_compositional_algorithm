@@ -1,13 +1,21 @@
 # requirements.txt
 # Requires Python 3.10 or higher
 
-# Standard libraries for image processing
-scipy==1.7.3
-numpy==1.21.4
 
 # Configuration handling
 configparser==5.2.0
 
 # Additional libraries (if needed)
+scikit-image==0.24.0
 matplotlib==3.5.0
-imageio==2.34.2
+# Standard libraries for image processing
+numpy>=1.23
+scipy>=1.9
+networkx>=2.8
+pillow>=9.1
+imageio>=2.33
+tifffile>=2022.8.12
+packaging>=21
+lazy-loader>=0.4
+ipykernel
+

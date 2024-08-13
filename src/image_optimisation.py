@@ -94,11 +94,13 @@ def independent_vector(DIJ, DI, nparams, nx, ny, nz):
 
     for i in range(ny):
         for j in range(nx):
+            # DIJ, DI are supposed to be flattened
             b += Atb(
                 DIJ[(i * nx + j) * nparams * nz : (i * nx + j + 1) * nparams * nz],
                 DI[(i * nx + j) * nz : (i * nx + j + 1) * nz],
                 nz, nparams
             )
+            # b is flattened
 
     return b
 
@@ -150,7 +152,7 @@ def parametric_solve(H_1, b, nparams):
     return np.sqrt(error), dp
 
 
-def steepest_descent_images(Ix, Iy, J, nparams, nx, ny, nz):
+def steepest_descent_images(Ix, Iy, J, nparams):
     """
     Calculate the steepest descent images DI^t*J for optimization.
 
@@ -169,13 +171,9 @@ def steepest_descent_images(Ix, Iy, J, nparams, nx, ny, nz):
     """
    #TODO: remove params nx, ny, nz and define them from the shape of Ix, Iy and J
    #TODO: implement sanity check on the dimensions of Ix, Iy and J, they should be compatible 
+    ny, nx, nz = Ix.shape
 
-    # Convert inputs to numpy arrays
-   #TODO: think whether images should be flattened outside of this function or not 
-    Ix = np.array(Ix).reshape((ny, nx, nz))
-    Iy = np.array(Iy).reshape((ny, nx, nz))
-    J = np.array(J).reshape((2 * ny * nx, nparams))
-    
+
     # Initialize the output array
     DIJ = np.zeros((ny * nx * nz * nparams,))
     
@@ -188,4 +186,7 @@ def steepest_descent_images(Ix, Iy, J, nparams, nx, ny, nz):
                     DIJ[k] = Ix[i, j, c] * J[2 * p, n] + Iy[i, j, c] * J[2 * p + 1, n]
                     k += 1
     
+    #TODO reshape DIJ to not be flattened
+    DIJ = DIJ.reshape((ny, nx, nz, nparams))
+
     return DIJ
