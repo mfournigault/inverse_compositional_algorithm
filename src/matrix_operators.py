@@ -4,6 +4,7 @@ def AtA(DIJ_slice, nz, nparams):
     """
     Function to compute the multiplication of the transpose of a matrix and itself.
     """
+    #TODO: decide if obsolete
     DIJ_matrix = DIJ_slice.reshape((nz, nparams))
     return DIJ_matrix.T @ DIJ_matrix
 
@@ -37,6 +38,7 @@ def Atb(DIJ, DI, nz, nparams):
     Returns:
     numpy.ndarray: output independent vector
     """
+    #TODO: decide if obsolete
     DIJ = DIJ.reshape((nparams, nz))
     DI = DI.reshape((nz, 1))
     b = np.dot(DIJ.T, DI).flatten()

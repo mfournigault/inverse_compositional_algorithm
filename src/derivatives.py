@@ -20,7 +20,7 @@ def jacobian(transform_type, nx, ny):
     """
     nparams = transform_type.nparams()
 
-    J = np.zeros((2 * nx * ny, nparams))
+    J = np.zeros((2 * nx * ny * nparams))
 
     match transform_type:
         case TransformType.TRANSLATION:
@@ -110,8 +110,10 @@ def hessian(DIJ):
     # Calculate the Hessian in a neighbor window
     for i in range(ny):
         for j in range(nx):
-            DIJ_slice = DIJ[(i * nx + j) * nz * nparams : (i * nx + j + 1) * nz * nparams]
-            H += AtA(DIJ_slice, nz, nparams)
+            # DIJ_slice = DIJ[(i * nx + j) * nz * nparams : (i * nx + j + 1) * nz * nparams]
+            DIJ_slice = DIJ[i, i, :, :]
+            # H += AtA(DIJ_slice, nz, nparams)
+            H += DIJ_slice.T @ DIJ_slice
     
     return H
 

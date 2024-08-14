@@ -8,6 +8,7 @@ import transformation as tr
 import bicubic_interpolation as bi
 import zoom as zm
 import constants as cts
+import transformation as tr
 
  
 def inverse_compositional_algorithm(I1, I2, p, transform_type, TOL, verbose):
@@ -68,7 +69,7 @@ def inverse_compositional_algorithm(I1, I2, p, transform_type, TOL, verbose):
     # DIJ is flattened
     
     # Compute the Hessian matrix
-    H = de.hessian(DIJ, nparams, nx, ny, nz) # H is not flattened
+    H = de.hessian(DIJ) # H is not flattened
     H_1 = de.inverse_hessian(H, nparams) # H_1 is not flattened
     
     # Iterate
@@ -77,13 +78,16 @@ def inverse_compositional_algorithm(I1, I2, p, transform_type, TOL, verbose):
     
     while error > TOL and niter < cts.MAX_ITER:
         # Warp image I2
-        bi.bicubic_interpolation_image(I2, Iw, p, transform_type, nx, ny, nz)
+        #TODO: replace bicubic_interpolation_image by skimage.transform.warp -> done
+        # bi.bicubic_interpolation_image(I2, Iw, p, transform_type, nx, ny, nz)
+        Iw = tr.transform_image(I2, transform_type, p)
         
         # Compute the error image (I1-I2w)
         # difference_image(I1, Iw, DI, nx, ny, nz)
         DI = Iw - I1
         
         # Compute the independent vector
+        #TODO: correct this function to work with non flat images and matrices -> done
         b = io.independent_vector(DIJ, DI, nparams, nx, ny, nz) # b is flattened
         
         # Solve equation and compute increment of the motion 

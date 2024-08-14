@@ -94,12 +94,13 @@ def independent_vector(DIJ, DI, nparams, nx, ny, nz):
 
     for i in range(ny):
         for j in range(nx):
-            # DIJ, DI are supposed to be flattened
-            b += Atb(
-                DIJ[(i * nx + j) * nparams * nz : (i * nx + j + 1) * nparams * nz],
-                DI[(i * nx + j) * nz : (i * nx + j + 1) * nz],
-                nz, nparams
-            )
+            # DIJ, DI are supposed to not be flattened
+            # b += Atb(
+            #     DIJ[(i * nx + j) * nparams * nz : (i * nx + j + 1) * nparams * nz],
+            #     DI[(i * nx + j) * nz : (i * nx + j + 1) * nz],
+            #     nz, nparams
+            # )
+            b += np.dot(DIJ[j, i, :, :].T, DI[j, i, :])
             # b is flattened
 
     return b
@@ -140,7 +141,7 @@ def independent_vector_robust(DIJ, DI, rho, nparams, nx, ny, nz):
 
 def parametric_solve(H_1, b, nparams):
     # Convert inputs to numpy arrays
-    H_1 = np.array(H_1).reshape((nparams, nparams))
+    # H_1 = np.array(H_1).reshape((nparams, nparams))
     b = np.array(b)
     
     # Perform matrix-vector multiplication
@@ -160,18 +161,18 @@ def steepest_descent_images(Ix, Iy, J, nparams):
         Ix (ndarray): The x-derivative of the input image.
         Iy (ndarray): The y-derivative of the input image.
         J (ndarray): The Jacobian matrix.
-        nparams (int): The number of parameters.
-        nx (int): The number of columns in the image.
-        ny (int): The number of rows in the image.
-        nz (int): The number of channels in the image.
+        nparams (int): The number of parameters of the transformation.
 
     Returns:
         ndarray: The steepest descent images.
 
     """
-   #TODO: remove params nx, ny, nz and define them from the shape of Ix, Iy and J
-   #TODO: implement sanity check on the dimensions of Ix, Iy and J, they should be compatible 
-    ny, nx, nz = Ix.shape
+    # Define nx, ny, nz from the shape of Ix 
+    ny, nx, nz = Ix.shape # suppose that Ix and Iy are not flattened
+
+    # Verify the dimensions of Ix and Iy
+    if Ix.shape != Iy.shape:
+        raise ValueError("Ix and Iy must have the same dimensions")
 
 
     # Initialize the output array
@@ -183,10 +184,10 @@ def steepest_descent_images(Ix, Iy, J, nparams):
             for c in range(nz):
                 p = i * nx + j
                 for n in range(nparams):
-                    DIJ[k] = Ix[i, j, c] * J[2 * p, n] + Iy[i, j, c] * J[2 * p + 1, n]
+                    # DIJ[k++]=Ix[p*nz+c]*J[2*p*nparams+n]+Iy[p*nz+c]*J[2*p*nparams+n+nparams];
+                    DIJ[k] = Ix[i, j, c] * J[i, j, n] + Iy[i, j, c] * J[i, j, n + nparams]
                     k += 1
     
-    #TODO reshape DIJ to not be flattened
     DIJ = DIJ.reshape((ny, nx, nz, nparams))
 
     return DIJ
