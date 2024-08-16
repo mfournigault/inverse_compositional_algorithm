@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.ndimage import sobel
+from skimage.transform import rescale
 
 import derivatives as de
 import image_optimisation as io
@@ -40,9 +41,6 @@ def inverse_compositional_algorithm(I1, I2, p, transform_type, TOL, verbose):
 
     #TODO: correction all the function and subfunctions to work with non flat images and matrices
     size1 = nx * ny * nz
-    size2 = size1 * nparams
-    size3 = nparams * nparams
-    size4 = 2 * nx * ny * nparams
 
     Ix = np.zeros(I1.shape)  # x derivative of the first image
     Iy = np.zeros(I1.shape)  # y derivative of the first image
@@ -61,11 +59,11 @@ def inverse_compositional_algorithm(I1, I2, p, transform_type, TOL, verbose):
         Iy[:, :, channel] = sobel(I1[:, :, channel], axis=0)
     
     # Evaluate the Jacobian
-    J = de.jacobian(nparams, nx, ny)
+    J = de.jacobian(transform_type, nx, ny)
     
     # Compute the steepest descent images
     # Ix, Iy are supposed to be flattened
-    DIJ = io.steepest_descent_images(Ix, Iy, J, nparams, nx, ny, nz)
+    DIJ = io.steepest_descent_images(Ix, Iy, J, nparams)
     # DIJ is flattened
     
     # Compute the Hessian matrix
@@ -104,7 +102,7 @@ def inverse_compositional_algorithm(I1, I2, p, transform_type, TOL, verbose):
         
         niter += 1
     
-    return p
+    return p, error, DI, Iw
 
 def robust_inverse_compositional_algorithm(
     I1,    # first image
@@ -268,18 +266,14 @@ def pyramidal_inverse_compositional_algorithm(
     #TODO: correction all the function and subfunctions to work with non flat images and matrices
     nparams = transform_type.nparams()
     size = nxx * nyy * nzz
-    I1s = np.zeros((nscales, size))
-    I2s = np.zeros((nscales, size))
+    I1s = [np.zeros((nyy, nxx, nzz))]
+    I2s = [np.zeros((nyy, nxx, nzz))]
     ps = np.zeros((nscales, nparams))
     nx = np.zeros(nscales)
     ny = np.zeros(nscales)
 
-    # I1s[0] = np.copy(I1).reshape((nyy, nxx, nzz))
-    temp = np.copy(I1).reshape((nyy, nxx, nzz))
-    I1s[0] = temp
-    # I2s[0] = np.copy(I2).reshape((nyy, nxx, nzz))
-    temp = np.copy(I2).reshape((nyy, nxx, nzz))
-    I2s[0] = temp
+    I1s[0] = I1
+    I2s[0] = I2
     ps[0] = np.copy(p)
     nx[0] = nxx
     ny[0] = nyy
@@ -289,8 +283,11 @@ def pyramidal_inverse_compositional_algorithm(
 
     for s in range(1, nscales):
         nx[s], ny[s] = zm.zoom_size(nx[s-1], ny[s-1], nu)
-        I1s[s] = zm.zoom_out(I1s[s-1], nx[s-1], ny[s-1], nzz, nu)
-        I2s[s] = zm.zoom_out(I2s[s-1], nx[s-1], ny[s-1], nzz, nu)
+        #TODO: replace zoom_out by skimage.transform.rescale -> done
+        # I1s[s] = zm.zoom_out(I1s[s-1], nx[s-1], ny[s-1], nzz, nu)
+        I1s.append(rescale(I1s[s-1], nu, mode='constant', cval=0, anti_aliasing=True, channel_axis=2))
+        # I2s[s] = zm.zoom_out(I2s[s-1], nx[s-1], ny[s-1], nzz, nu)
+        I2s.append(rescale(I2s[s-1], nu, mode='constant', cval=0, anti_aliasing=True, channel_axis=2))
         ps[s] = np.zeros(nparams)
 
     # Function implementation...
@@ -298,7 +295,7 @@ def pyramidal_inverse_compositional_algorithm(
         ps[s] = np.zeros(nparams)
         if verbose:
             print(f"Scale: {s}")
-        if robust_type == 'QUADRATIC':
+        if robust_type == io.RobustErrorFunctionType.QUADRATIC:
             if verbose:
                 print("(L2 norm)")
             inverse_compositional_algorithm(

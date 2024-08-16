@@ -8,7 +8,7 @@ def create_config_file(filename):
     config['InverseCompositionalAlgorithm'] = {
         'TOL': '1e-3',
         'transform_type': 'EUCLIDEAN', #TRANSLATION, EUCLIDEAN, SIMILARITY, AFFINITY, HOMOGRAPHY
-        'verbose': 'True'
+        'verbose': 'False'
     }
 
     config['RobustInverseCompositionalAlgorithm'] = {
@@ -16,7 +16,7 @@ def create_config_file(filename):
         'transform_type': 'EUCLIDEAN', #TRANSLATION, EUCLIDEAN, SIMILARITY, AFFINITY, HOMOGRAPHY
         'robust_type': 'CHARBONNIER', #QUADRATIC, TRUNCATED_QUADRATIC, GERMAN_MCCLURE, LORENTZIAN, CHARBONNIER
         'lambda': '0.0',
-        'verbose': 'True'
+        'verbose': 'False'
     }
 
     config['PyramidalInverseCompositionalAlgorithm'] = {
@@ -26,7 +26,7 @@ def create_config_file(filename):
         'nu': '0.5',
         'robust_type': 'CHARBONNIER', #QUADRATIC, TRUNCATED_QUADRATIC, GERMAN_MCCLURE, LORENTZIAN, CHARBONNIER
         'lambda': '0.0',
-        'verbose': 'True'
+        'verbose': 'False'
     }
 
     with open(filename, 'w') as configfile:

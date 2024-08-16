@@ -100,7 +100,12 @@ def independent_vector(DIJ, DI, nparams, nx, ny, nz):
             #     DI[(i * nx + j) * nz : (i * nx + j + 1) * nz],
             #     nz, nparams
             # )
-            b += np.dot(DIJ[j, i, :, :].T, DI[j, i, :])
+            try:
+                # b += np.dot(DIJ[i, j, :, :].T, DI[i, j, :])
+                b += DIJ[i, j, :, :].T @ DI[i, j, :]
+            except IndexError:
+                print(f"IndexError: i={i}, j={j}, DIJ.shape={DIJ.shape}, DI.shape={DI.shape}")
+                raise
             # b is flattened
 
     return b
@@ -145,7 +150,8 @@ def parametric_solve(H_1, b, nparams):
     b = np.array(b)
     
     # Perform matrix-vector multiplication
-    dp = np.dot(H_1, b)
+    # dp = np.dot(H_1, b)
+    dp = H_1 @ b
     
     # Calculate the error
     error = np.sum(dp**2)

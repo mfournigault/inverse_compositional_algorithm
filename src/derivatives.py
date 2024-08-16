@@ -111,7 +111,7 @@ def hessian(DIJ):
     for i in range(ny):
         for j in range(nx):
             # DIJ_slice = DIJ[(i * nx + j) * nz * nparams : (i * nx + j + 1) * nz * nparams]
-            DIJ_slice = DIJ[i, i, :, :]
+            DIJ_slice = DIJ[i, j, :, :]
             # H += AtA(DIJ_slice, nz, nparams)
             H += DIJ_slice.T @ DIJ_slice
     
