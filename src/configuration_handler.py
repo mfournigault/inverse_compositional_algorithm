@@ -22,9 +22,9 @@ def create_config_file(filename):
     config['PyramidalInverseCompositionalAlgorithm'] = {
         'TOL': '1e-3',
         'transform_type': 'EUCLIDEAN', #TRANSLATION, EUCLIDEAN, SIMILARITY, AFFINITY, HOMOGRAPHY
-        'pyramid_levels': '5',
+        'pyramid_levels': '2',
         'nu': '0.5',
-        'robust_type': 'CHARBONNIER', #QUADRATIC, TRUNCATED_QUADRATIC, GERMAN_MCCLURE, LORENTZIAN, CHARBONNIER
+        'robust_type': 'QUADRATIC', #QUADRATIC, TRUNCATED_QUADRATIC, GERMAN_MCCLURE, LORENTZIAN, CHARBONNIER
         'lambda': '0.0',
         'verbose': 'False'
     }

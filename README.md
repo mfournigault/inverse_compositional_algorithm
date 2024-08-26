@@ -4,6 +4,7 @@ Inverse Compositional Algorithm
 ## Description
 This is a Python implementation of the inverse compositional algorithm as defined in the publicaiton "The Inverse Compositional Algorithm for Parametric Registration", Image Processing On Line, 6 (2016), pp. 212–232. https://doi.org/10.5201/ipol.2016.153.
 
+
 The contributions of the paper are:
 
 - The paper presents an implementation of the inverse compositional algorithm for parametric motion estimation, offering a method for computing global motion between images using a non-linear least square technique
@@ -19,6 +20,13 @@ The contributions of the paper are:
 The original publication comes with a C++ implementation.
 This python implementation is based on the original C++ code. It is intented to be lightweight, easy to deploy on any platform and easy to use.
 The python implementation makes use of standard libraries for classic image processing tasks like filter convolutions or bi-cubic interpolation, such as Scipy.
+
+**Update 2024-08-26:**
+The python implementation is based on the code of the modified inverse compositional algorithm. The original code was still buggy for homographies and was not working well if only one scale was processed with the quadratic metric.
+The modified algorithm brings several improvements:
+- reduced time computation,
+- better convergence.
+References of the modified inverse compositional algorithm are: "Improvements of the Inverse Compositional Algorithm for Parametric Motion Estimation",  Image Processing On Line, Vol 6, pp 435--464, 2018 https://doi.org/10.5201/ipol.2018.222.
 
 A faster implementation (hardware accelerated, but still python-based) will be developed in the future.
 

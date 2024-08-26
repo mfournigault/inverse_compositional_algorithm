@@ -6,4 +6,5 @@ __all__ = ["bicubic_interpolation",
     "_inverse_compositional_algorithm",
     "matrix_operators",
     "transformation",
-    "zoom"]
+    "zoom",
+    "utils"]

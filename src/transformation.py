@@ -1,6 +1,7 @@
 import numpy as np
 from enum import Enum
 from skimage import transform
+from skimage.exposure import rescale_intensity
 
 class TransformType(Enum):
     TRANSLATION = 1
@@ -234,7 +235,7 @@ def matrix2params(matrix, transform_type):
         list: The parameters for the transformation.
 
     """
-    p = []
+    p = np.zeros(transform_type.nparams(), dtype=np.float64)
     
     if transform_type == TransformType.TRANSLATION:
         p = [matrix[0, 2], matrix[1, 2]]
@@ -266,6 +267,14 @@ def transform_image(image, transformation_type, gt):
         - For `TransformType.EUCLIDEAN`: [tx, ty, theta]
         - angles of rotation are in radians counter-clockwise.
     """
+    # We force the images to be float64 to avoid problems with the computation accuracy
+    if image.dtype != np.float64:
+        image = image.astype(np.float64)
+        print("Image type: ", image.dtype)
+        print("Range of image: ", np.min(image), np.max(image))
+        # image = rescale_intensity(image, in_range=(0, 255), out_range=(0, 1))
+
+
     if all(np.abs(value) < 1e-10 for value in gt):
         # Identity transformation
         tform = transform.AffineTransform(matrix=np.eye(3))
@@ -292,5 +301,6 @@ def transform_image(image, transformation_type, gt):
         else:
             raise ValueError("Unsupported transformation type")
 
-    transformed_image = transform.warp(image, tform.inverse)
+    transformed_image = transform.warp(image, tform.inverse, preserve_range=True)
+    # transformed_image = transform.warp(image, tform, preserve_range=True)
     return transformed_image

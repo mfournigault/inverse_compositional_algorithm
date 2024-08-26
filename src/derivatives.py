@@ -1,6 +1,7 @@
 import numpy as np
 from matrix_operators import AtA, sAtA
 from transformation import TransformType
+import utils
 
 
 def jacobian(transform_type, nx, ny):
@@ -20,7 +21,7 @@ def jacobian(transform_type, nx, ny):
     """
     nparams = transform_type.nparams()
 
-    J = np.zeros((2 * nx * ny * nparams))
+    J = np.zeros((2 * nx * ny * nparams), dtype=np.float64)
 
     match transform_type:
         case TransformType.TRANSLATION:
@@ -105,15 +106,15 @@ def hessian(DIJ):
     """
     ny, nx, nz, nparams = DIJ.shape[0], DIJ.shape[1], DIJ.shape[2], DIJ.shape[3]
     # Initialize the Hessian to zero
-    H = np.zeros((nparams, nparams))
+    H = np.zeros((nparams, nparams), dtype=np.float64)
     
     # Calculate the Hessian in a neighbor window
     for i in range(ny):
         for j in range(nx):
             # DIJ_slice = DIJ[(i * nx + j) * nz * nparams : (i * nx + j + 1) * nz * nparams]
             DIJ_slice = DIJ[i, j, :, :]
-            # H += AtA(DIJ_slice, nz, nparams)
-            H += DIJ_slice.T @ DIJ_slice
+            if utils.valid_values(DIJ_slice):
+                H += DIJ_slice.T @ DIJ_slice
     
     return H
 
@@ -123,7 +124,7 @@ def hessian_robust(DIJ, rho, nparams, nx, ny, nz):
     The Hessian is equal to rho' * DIJ^T * DIJ.
     """
     # Initialize the Hessian to zero
-    H = np.zeros((nparams, nparams))
+    H = np.zeros((nparams, nparams), dtype=np.float64)
     
     # Calculate the Hessian in a neighbor window
     for i in range(ny):
@@ -145,11 +146,11 @@ def inverse_hessian(H, nparams):
     Returns:
     numpy.ndarray: inverse Hessian matrix
     """
-    H_1 = np.zeros((nparams, nparams))
+    H_1 = np.zeros((nparams, nparams), dtype=np.float64)
     try:
         H_1 = np.linalg.inv(H)
     except np.linalg.LinAlgError:
         # if the matrix is not invertible, set parameters to 0
-        H_1 = np.zeros((nparams, nparams))
+        H_1 = np.zeros((nparams, nparams), dtype=np.float64)
     return H_1
 

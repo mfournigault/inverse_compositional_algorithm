@@ -1,6 +1,7 @@
 import numpy as np
 from enum import Enum
 from matrix_operators import AtA, sAtA, Atb, sAtb
+import utils
 
 
 # Définition de l'énumération pour les types de fonctions robustes
@@ -64,7 +65,7 @@ def robust_error_function(DI, lambda_, type_, nx, ny, nz):
    #TODO: remove params nx, ny, nz and define them from the shape of DI
     
     DI = np.asarray(DI)
-    rho = np.zeros((ny, nx))
+    rho = np.zeros((ny, nx), dtype=np.float64)
 
     for i in range(ny):
         for j in range(nx):
@@ -74,6 +75,8 @@ def robust_error_function(DI, lambda_, type_, nx, ny, nz):
             rho[i, j] = rhop(norm, lambda_, type_)
 
     return rho
+
+
 
 def independent_vector(DIJ, DI, nparams, nx, ny, nz):
     """
@@ -90,7 +93,7 @@ def independent_vector(DIJ, DI, nparams, nx, ny, nz):
     Returns:
     numpy.ndarray: output independent vector
     """
-    b = np.zeros(nparams)
+    b = np.zeros(nparams, dtype=np.float64)
 
     for i in range(ny):
         for j in range(nx):
@@ -102,7 +105,9 @@ def independent_vector(DIJ, DI, nparams, nx, ny, nz):
             # )
             try:
                 # b += np.dot(DIJ[i, j, :, :].T, DI[i, j, :])
-                b += DIJ[i, j, :, :].T @ DI[i, j, :]
+                if utils.valid_values(DIJ[i, j, :, :]) and utils.valid_values(DI[i, j, :]):
+                    b += DIJ[i, j, :, :].T @ DI[i, j, :]
+
             except IndexError:
                 print(f"IndexError: i={i}, j={j}, DIJ.shape={DIJ.shape}, DI.shape={DI.shape}")
                 raise
@@ -130,7 +135,7 @@ def independent_vector_robust(DIJ, DI, rho, nparams, nx, ny, nz):
     #TODO: remove params nx, ny, nz and define them from the shape of DIJ   
     #TODO: sanity check on the dimensions of DIJ and DI, they should be compatible 
 
-    b = np.zeros(nparams)
+    b = np.zeros(nparams, dtype=np.float64)
 
     for i in range(ny):
         for j in range(nx):
@@ -147,7 +152,7 @@ def independent_vector_robust(DIJ, DI, rho, nparams, nx, ny, nz):
 def parametric_solve(H_1, b, nparams):
     # Convert inputs to numpy arrays
     # H_1 = np.array(H_1).reshape((nparams, nparams))
-    b = np.array(b)
+    b = np.array(b, dtype=np.float64)
     
     # Perform matrix-vector multiplication
     # dp = np.dot(H_1, b)
@@ -182,18 +187,13 @@ def steepest_descent_images(Ix, Iy, J, nparams):
 
 
     # Initialize the output array
-    DIJ = np.zeros((ny * nx * nz * nparams,))
+    DIJ = np.zeros((ny, nx, nz, nparams), dtype=np.float64)
     
-    k = 0
     for i in range(ny):
         for j in range(nx):
             for c in range(nz):
-                p = i * nx + j
                 for n in range(nparams):
                     # DIJ[k++]=Ix[p*nz+c]*J[2*p*nparams+n]+Iy[p*nz+c]*J[2*p*nparams+n+nparams];
-                    DIJ[k] = Ix[i, j, c] * J[i, j, n] + Iy[i, j, c] * J[i, j, n + nparams]
-                    k += 1
+                    DIJ[i, j, c, n] = Ix[i, j, c] * J[i, j, n] + Iy[i, j, c] * J[i, j, n + nparams]
     
-    DIJ = DIJ.reshape((ny, nx, nz, nparams))
-
     return DIJ

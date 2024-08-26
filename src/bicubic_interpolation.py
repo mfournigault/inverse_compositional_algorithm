@@ -12,16 +12,11 @@ def neumann_bc(x: int, nx: int) -> tuple[int, bool]:
     Returns:
         tuple[int, bool]: A tuple containing the modified value and a flag indicating if the value was modified due to the boundary conditions.
     """
-    out = False
     if x < 0:
-        if x < -2:
-            out = True
         x = 0
     elif x >= nx:
-        if x > nx + 1:
-            out = True
         x = nx - 1
-    return x, out
+    return x
 
 
 def cubic_interpolation(v: np.ndarray, x: float) -> float:
@@ -61,7 +56,7 @@ def bicubic_interpolation_array(p, x, y):
     return cubic_interpolation(v, x)
 
 
-def bicubic_interpolation_point(input, uu, vv, nx, ny, nz, k, border_out):
+def bicubic_interpolation_point(input, uu, vv, nx, ny, nz, k):
     """
     Performs bicubic interpolation at a given point.
 
@@ -73,66 +68,78 @@ def bicubic_interpolation_point(input, uu, vv, nx, ny, nz, k, border_out):
         ny (int): The height of the image.
         nz (int): The number of channels in the image.
         k (int): The channel index to interpolate.
-        border_out (bool): Flag indicating whether to return 0 for points outside the image.
 
     Returns:
         float: The interpolated value at the given point.
     """
     sx = -1 if uu < 0 else 1
     sy = -1 if vv < 0 else 1
-    out = False
     
-    x = neumann_bc(int(uu), nx, out)
-    y = neumann_bc(int(vv), ny, out)
-    mx = neumann_bc(int(uu) - sx, nx, out)
-    my = neumann_bc(int(vv) - sy, ny, out)
-    dx = neumann_bc(int(uu) + sx, nx, out)
-    dy = neumann_bc(int(vv) + sy, ny, out)
-    ddx = neumann_bc(int(uu) + 2 * sx, nx, out)
-    ddy = neumann_bc(int(vv) + 2 * sy, ny, out)
+    x = neumann_bc(int(uu), nx)
+    y = neumann_bc(int(vv), ny)
+    mx = neumann_bc(int(uu) - sx, nx)
+    my = neumann_bc(int(vv) - sy, ny)
+    dx = neumann_bc(int(uu) + sx, nx)
+    dy = neumann_bc(int(vv) + sy, ny)
+    ddx = neumann_bc(int(uu) + 2 * sx, nx)
+    ddy = neumann_bc(int(vv) + 2 * sy, ny)
     
-    if out and border_out:
-        return 0
-    else:
-        p11 = input[(mx  + nx * my) * nz + k]
-        p12 = input[(x   + nx * my) * nz + k]
-        p13 = input[(dx  + nx * my) * nz + k]
-        p14 = input[(ddx + nx * my) * nz + k]
-        p21 = input[(mx  + nx * y) * nz + k]
-        p22 = input[(x   + nx * y) * nz + k]
-        p23 = input[(dx  + nx * y) * nz + k]
-        p24 = input[(ddx + nx * y) * nz + k]
-        p31 = input[(mx  + nx * dy) * nz + k]
-        p32 = input[(x   + nx * dy) * nz + k]
-        p33 = input[(dx  + nx * dy) * nz + k]
-        p34 = input[(ddx + nx * dy) * nz + k]
-        p41 = input[(mx  + nx * ddy) * nz + k]
-        p42 = input[(x   + nx * ddy) * nz + k]
-        p43 = input[(dx  + nx * ddy) * nz + k]
-        p44 = input[(ddx + nx * ddy) * nz + k]
-        
-        pol = np.array([
-            [p11, p21, p31, p41],
-            [p12, p22, p32, p42],
-            [p13, p23, p33, p43],
-            [p14, p24, p34, p44]
-        ])
-        
-        return bicubic_interpolation_array(pol, uu - x, vv - y)
+    p11 = input[my, mx, k]
+    p12 = input[my, x, k]
+    p13 = input[my, dx, k]
+    p14 = input[my, ddx, k]
+    p21 = input[y, mx, k]
+    p22 = input[y, x, k]
+    p23 = input[y, dx, k]
+    p24 = input[y, ddx, k]
+    p31 = input[dy, mx, k]
+    p32 = input[dy, x, k]
+    p33 = input[dy, dx, k]
+    p34 = input[dy, ddx, k]
+    p41 = input[ddy, mx, k]
+    p42 = input[ddy, x, k]
+    p43 = input[ddy, dx, k]
+    p44 = input[ddy, ddx, k]
+    
+    pol = np.array([
+        [p11, p21, p31, p41],
+        [p12, p22, p32, p42],
+        [p13, p23, p33, p43],
+        [p14, p24, p34, p44]
+    ])
+    
+    return bicubic_interpolation_array(pol, uu - x, vv - y)
 
 
-def bicubic_interpolation_image(input, output, params, transform_type, nx, ny, nz, border_out):
+def bicubic_interpolation_image(
+    input, 
+    params, 
+    transform_type, 
+    nanifoutside, 
+    delta):
     
+    ny, nx, nz = input.shape
+    output = np.zeros((ny, nx, nz), dtype=np.float64)
+
     nparams = transform_type.nparams()
+
+    if nanifoutside:
+        out_value = np.nan
+    else:
+        out_value = 0.0
     
     for i in range(ny):
         for j in range(nx):
             p = i * nx + j
-            x, y = tf.project(j, i, params, nparams)
-            
-            for k in range(nz):
-                if border_out and (x < 0 or x >= nx or y < 0 or y >= ny):
-                    output[p * nz + k] = 0
-                else:
-                   #TODO: replace with the function from scipy.ndimage (map_coordinates) 
-                    output[p * nz + k] = bicubic_interpolation_point(input, x, y, nx, ny, nz, k, border_out)
+            x, y = tf.project(j, i, params, transform_type)
+            out = (x < delta) or (x > nx - 1 - delta) or (y < delta) or (y > ny - 1 - delta)
+
+            if out:
+                output[i, j, :] = out_value
+            else:
+                for k in range(nz):
+                    output[i, j, k] = bicubic_interpolation_point(input, x, y, nx, ny, nz, k)
+    
+    return output
+
+
