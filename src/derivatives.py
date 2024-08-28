@@ -118,19 +118,22 @@ def hessian(DIJ):
     
     return H
 
-def hessian_robust(DIJ, rho, nparams, nx, ny, nz):
+def hessian_robust(DIJ, rho, nparams):
     """
     Function to compute the Hessian matrix with robust error functions.
     The Hessian is equal to rho' * DIJ^T * DIJ.
     """
+    ny, nx, nz, nparams = DIJ.shape[0], DIJ.shape[1], DIJ.shape[2], DIJ.shape[3]
     # Initialize the Hessian to zero
     H = np.zeros((nparams, nparams), dtype=np.float64)
     
     # Calculate the Hessian in a neighbor window
     for i in range(ny):
         for j in range(nx):
-            DIJ_slice = DIJ[(i * nx + j) * nz * nparams : (i * nx + j + 1) * nz * nparams]
-            H += sAtA(rho[i * nx + j], DIJ_slice, nz, nparams)
+            DIJ_slice = DIJ[i, j, :, :]
+            # H += sAtA(rho[i * nx + j], DIJ_slice, nz, nparams)
+            if utils.valid_values(DIJ_slice):
+                H += rho[i, j] * DIJ_slice.T @ DIJ_slice
     
     return H
 

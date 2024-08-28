@@ -1,21 +1,9 @@
-# requirements.txt
-# Requires Python 3.10 or higher
-
-
-# Configuration handling
-configparser==5.2.0
-
-# Additional libraries (if needed)
+imageio==2.34.2
+numpy==1.25.2
+scipy==1.11.2
 scikit-image==0.24.0
+configparser==5.2.0
 matplotlib==3.5.0
-# Standard libraries for image processing
-numpy>=1.23
-scipy>=1.9
-networkx>=2.8
-pillow>=9.1
-imageio>=2.33
-tifffile>=2022.8.12
-packaging>=21
-lazy-loader>=0.4
-ipykernel
-
+ipykernel==6.29.5
+jupyter_client==8.6.2
+jupyter_core==5.7.2

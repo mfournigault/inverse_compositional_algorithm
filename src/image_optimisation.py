@@ -46,7 +46,7 @@ def rhop(t2, lambda_, type_):
     return result
 
 
-def robust_error_function(DI, lambda_, type_, nx, ny, nz):
+def robust_error_function(DI, lambda_, type_):
     """
     Function to store the values of p'((I2(x'(x;p))-I1(x))²)
 
@@ -54,9 +54,6 @@ def robust_error_function(DI, lambda_, type_, nx, ny, nz):
     DI (numpy.ndarray): input difference array
     lambda_ (float): threshold used in the robust functions
     type_ (int): choice of robust error function
-    nx (int): number of columns
-    ny (int): number of rows
-    nz (int): number of channels
 
     Returns:
     numpy.ndarray: output robust function array
@@ -64,21 +61,37 @@ def robust_error_function(DI, lambda_, type_, nx, ny, nz):
 
    #TODO: remove params nx, ny, nz and define them from the shape of DI
     
-    DI = np.asarray(DI)
+    ny, nx, nz = DI.shape # suppose that DI is not flattened
     rho = np.zeros((ny, nx), dtype=np.float64)
 
     for i in range(ny):
         for j in range(nx):
-            norm = 0.0
-            for c in range(nz):
-                norm += DI[i, j, c] * DI[i, j, c]
-            rho[i, j] = rhop(norm, lambda_, type_)
+            if utils.valid_values(DI[i, j, :]):
+                norm = 0.0
+                for c in range(nz):
+                    norm += DI[i, j, c] * DI[i, j, c]
+                rho[i, j] = rhop(norm, lambda_, type_)
+            else:
+                rho[i, j] = 0.0
+    
+    # code for time optimization
+    # Créer un masque pour les valeurs valides
+    # valid_mask = np.apply_along_axis(utils.valid_values, 2, DI)
+
+    # # Calculer la norme pour les valeurs valides
+    # norms = np.linalg.norm(DI, axis=2)
+
+    # # Appliquer la fonction rhop uniquement aux valeurs valides
+    # rho[valid_mask] = rhop(norms[valid_mask], lambda_, type_)
+
+    # # Mettre à zéro les valeurs non valides
+    # rho[~valid_mask] = 0.0
 
     return rho
 
 
 
-def independent_vector(DIJ, DI, nparams, nx, ny, nz):
+def independent_vector(DIJ, DI, nparams):
     """
     Function to compute b=Sum(DIJ^t * DI)
 
@@ -86,13 +99,11 @@ def independent_vector(DIJ, DI, nparams, nx, ny, nz):
     DIJ (numpy.ndarray): the steepest descent image
     DI (numpy.ndarray): I2(x'(x;p))-I1(x)
     nparams (int): number of parameters
-    nx (int): number of columns
-    ny (int): number of rows
-    nz (int): number of channels
 
     Returns:
     numpy.ndarray: output independent vector
     """
+    ny, nx, nz, _ = DI.shape # suppose that DI is not flattened
     b = np.zeros(nparams, dtype=np.float64)
 
     for i in range(ny):
@@ -116,7 +127,7 @@ def independent_vector(DIJ, DI, nparams, nx, ny, nz):
     return b
 
 
-def independent_vector_robust(DIJ, DI, rho, nparams, nx, ny, nz):
+def independent_vector_robust(DIJ, DI, rho, nparams):
     """
     Function to compute b=Sum(rho'*DIJ^t * DI) with robust error functions
 
@@ -125,26 +136,30 @@ def independent_vector_robust(DIJ, DI, rho, nparams, nx, ny, nz):
     DI (numpy.ndarray): I2(x'(x;p))-I1(x)
     rho (numpy.ndarray): robust function
     nparams (int): number of parameters
-    nx (int): number of columns
-    ny (int): number of rows
-    nz (int): number of channels
 
     Returns:
     numpy.ndarray: output independent vector
     """
     #TODO: remove params nx, ny, nz and define them from the shape of DIJ   
     #TODO: sanity check on the dimensions of DIJ and DI, they should be compatible 
-
+    ny, nx, nz = DI.shape # suppose that DI is not flattened
     b = np.zeros(nparams, dtype=np.float64)
 
     for i in range(ny):
         for j in range(nx):
-            b += sAtb(
-                rho[i * nx + j], 
-                DIJ[(i * nx + j) * nparams * nz : (i * nx + j + 1) * nparams * nz],
-                DI[(i * nx + j) * nz : (i * nx + j + 1) * nz],
-                nz, nparams
-            )
+            # b += sAtb(
+            #     rho[i * nx + j], 
+            #     DIJ[(i * nx + j) * nparams * nz : (i * nx + j + 1) * nparams * nz],
+            #     DI[(i * nx + j) * nz : (i * nx + j + 1) * nz],
+            #     nz, nparams
+            # )
+            try:
+                if utils.valid_values(DIJ[i, j, :, :]) and utils.valid_values(DI[i, j, :]):
+                    b += rho[i, j] * DIJ[i, j, :, :].T @ DI[i, j, :]
+
+            except IndexError:
+                print(f"IndexError: i={i}, j={j}, DIJ.shape={DIJ.shape}, DI.shape={DI.shape}")
+                raise
 
     return b
 

@@ -24,13 +24,15 @@ def inverse_compositional_algorithm(I1, I2, p, transform_type, nanifoutside, del
     :param I2: Second image, a numpy array of shape (ny, nx, nz).
     :param p: Initial transformation parameters (may be not null if we iterate on the function call).
     :param transform_type (TransformType): The type of transformation.
-    :param TOL: Tolerance used for the convergence in the iterations.
     :param nanifoutside: If True, the pixels outside the image are considered as NaN.
     :param delta: The maximal distance to boundary to consider the pixel as NaN.
+    :param TOL: Tolerance used for the convergence in the iterations.
     :param verbose: Enable verbose mode.
     
     :return: The updated transformation parameters.
     """
+    #TODO: remove this constraint to alow the processing of grey scale images
+    #TODO: if images are colored and processing requested in grey scale, we must convert them to grey scale
     # We suppose that I1 and I2 are RGB images with channels in the last dimension, if not we raise an error
     if len(I1.shape) != 3 or len(I2.shape) != 3 or I1.shape[2] != 3 or I2.shape[2] != 3:
         raise ValueError("I1 and I2 must be RGB images with channels in the last dimension")
@@ -139,7 +141,7 @@ def inverse_compositional_algorithm(I1, I2, p, transform_type, nanifoutside, del
         
         # Compute the independent vector
         #TODO: correct this function to work with non flat images and matrices -> done
-        b = io.independent_vector(DIJ, DI, nparams, nx, ny, nz) # b is flattened
+        b = io.independent_vector(DIJ, DI, nparams) # b is flattened
         # print("b: ", b)
         # print("b range: ", np.min(b), np.max(b))
         
@@ -164,9 +166,8 @@ def robust_inverse_compositional_algorithm(
     I2,    # second image
     p,     # parameters of the transform (output, all in input if we iterate on the function call)
     transform_type,   # transform type
-    nx,        # number of columns of the image
-    ny,        # number of rows of the image
-    nz,        # number of channels of the images
+    nanifoutside, 
+    delta, 
     TOL,    # Tolerance used for the convergence in the iterations
     robust_type, # type (RobustErrorFunctionType) of robust error function
     lambda_, # parameter of robust error function
@@ -180,9 +181,8 @@ def robust_inverse_compositional_algorithm(
     - I2: Second image.
     - p: Initial Parameters of the transform (may be not null if we iterate on the function call).
     - transform_type (TransformType): The type of transformation.
-    - nx: Number of columns of the image.
-    - ny: Number of rows of the image.
-    - nz: Number of channels of the images.
+    - nanifoutside: If True, the pixels outside the image are considered as NaN.
+    - delta: The maximal distance to boundary to consider the pixel as NaN.
     - TOL: Tolerance used for the convergence in the iterations.
     - robust: Robust error function.
     - lambda_: Parameter of the robust error function.
@@ -201,41 +201,52 @@ def robust_inverse_compositional_algorithm(
     if TOL >= 0.01:
         raise ValueError("TOL must be positive and very small (less than 0.01)")
 
+    #TODO: if images are colored and processing requested in grey scale, we must convert them to grey scale
+
     # We force the images to be float64 to avoid problems with the computation accuracy
     if I1.dtype != np.float64 or I2.dtype != np.float64:
         I1 = I1.astype(np.float64)
         I2 = I2.astype(np.float64)
 
     nparams = transform_type.nparams()
-    size0 = nx * ny
-    size1 = nx * ny * nz
-    size2 = size1 * nparams
-    size3 = nparams * nparams
-    size4 = 2 * nx * ny * nparams
 
-    #TODO: correction all the function and subfunctions to work with non flat images and matrices
-    Ix = np.zeros(size1)   # x derivative of the first image
-    Iy = np.zeros(size1)   # y derivative of the first image
-    Iw = np.zeros(size1)   # warp of the second image
-    DI = np.zeros(size1)   # error image (I2(w)-I1)
-    DIJ = np.zeros(size2)  # steepest descent images
-    dp = np.zeros(nparams) # incremental solution
-    b = np.zeros(nparams)  # steepest descent images
-    J = np.zeros(size4)    # jacobian matrix for all points
-    H = np.zeros(size3)    # Hessian matrix
-    H_1 = np.zeros(size3)  # inverse Hessian matrix
-    rho = np.zeros(size0)  # robust function
+    Ix = np.zeros(I1.shape, dtype=np.float64)  # x derivative of the first image
+    Iy = np.zeros(I1.shape, dtype=np.float64)  # y derivative of the first image
+    Iw = np.zeros(I1.shape, dtype=np.float64)  # warp of the second image
+    DI = np.zeros(I1.shape, dtype=np.float64)  # error image (I2(w)-I1)
+    DIJ = np.zeros((ny, nx, nz, nparams), dtype=np.float64)  # steepest descent images
+    dp = np.zeros(nparams, dtype=np.float64)  # incremental solution
+    b = np.zeros(nparams, dtype=np.float64)  # steepest descent images
+    J = np.zeros((ny, nx, 2 * nparams), dtype=np.float64)  # jacobian matrix for all points
+    H = np.zeros((nparams, nparams), dtype=np.float64)  # Hessian matrix
+    H_1 = np.zeros((nparams, nparams), dtype=np.float64)  # inverse Hessian matrix
 
     # Evaluate the gradient of I1
+    #TODO: review the gradient dx and dy computation: the prewitt operator might not be the best choice
     for channel in range(nz):
-        Ix[:, :, channel] = sobel(I1[:, :, channel], axis=1)
-        Iy[:, :, channel] = sobel(I1[:, :, channel], axis=0)
+        for i in range(1, ny-1):
+            for j in range(1, nx-1):
+                Ix[i, j, channel] = 0.5 * (I1[i, j+1, channel]-I1[i, j-1, channel])
+                Iy[i, j, channel] = 0.5 * (I1[i+1, j, channel]-I1[i-1, j, channel])
+        # Ix[:, :, channel] = sobel(I1[:, :, channel], axis=1)
+        # Iy[:, :, channel] = sobel(I1[:, :, channel], axis=0)
+
+     # Like in the modified version of the algorithm, we discard boundary pixels
+    if (nanifoutside is True and delta > 0):
+        Ix[:delta, :, :] = np.nan
+        Ix[-delta:, :, :] = np.nan
+        Ix[:, :delta, :] = np.nan
+        Ix[:, -delta:, :] = np.nan
+        Iy[:delta, :, :] = np.nan
+        Iy[-delta:, :, :] = np.nan
+        Iy[:, :delta, :] = np.nan
+        Iy[:, -delta:, :] = np.nan
 
     # Evaluate the Jacobian
     J = de.jacobian(transform_type, nx, ny)
 
     # Compute the steepest descent images
-    DIJ = io.steepest_descent_images(Ix, Iy, J, nparams, nx, ny, nz)
+    DIJ = io.steepest_descent_images(Ix, Iy, J, nparams)
 
     # Iterate
     error = 1E10
@@ -244,14 +255,15 @@ def robust_inverse_compositional_algorithm(
 
     while error > TOL and niter < cts.MAX_ITER:
         # Warp image I2
-        bi.bicubic_interpolation(I2, Iw, p, transform_type, nx, ny, nz)
+        Iw = bi.bicubic_interpolation_image(I2, p, transform_type, nanifoutside, delta) 
 
         # Compute the error image (I1-I2w)
         # difference_image(I1, Iw, DI, nx, ny, nz)
         DI = Iw - I1
 
         # Compute robustification function
-        rho = io.robust_error_function(DI, lambda_it, robust_type, nx, ny, nz)
+        #TODO: correct this function to work with non flat images and matrices 
+        rho = io.robust_error_function(DI, lambda_it, robust_type)
 
         if lambda_ <= 0 and lambda_it > cts.LAMBDA_N:
             lambda_it *= cts.LAMBDA_RATIO
@@ -259,10 +271,12 @@ def robust_inverse_compositional_algorithm(
                 lambda_it = cts.LAMBDA_N
 
         # Compute the independent vector
-        b = io.independent_vector_robust(DIJ, DI, rho, nparams, nx, ny, nz)
+        #TODO: correct this function to work with non flat images and matrices
+        b = io.independent_vector_robust(DIJ, DI, rho, nparams)
 
         # Compute the Hessian matrix
-        H = de.hessian_robust(DIJ, rho, nparams, nx, ny, nz)
+        #TODO: correct this function to work with non flat images and matrices
+        H = de.hessian_robust(DIJ, rho, nparams)
         H_1 = de.inverse_hessian(H, nparams)
 
         # Solve equation and compute increment of the motion
@@ -279,7 +293,7 @@ def robust_inverse_compositional_algorithm(
 
         niter += 1
 
-    return p
+    return p, error, DI, Iw
  
 
 def pyramidal_inverse_compositional_algorithm(
