@@ -103,7 +103,7 @@ def independent_vector(DIJ, DI, nparams):
     Returns:
     numpy.ndarray: output independent vector
     """
-    ny, nx, nz, _ = DI.shape # suppose that DI is not flattened
+    ny, nx, nz = DI.shape # suppose that DI is not flattened
     b = np.zeros(nparams, dtype=np.float64)
 
     for i in range(ny):
