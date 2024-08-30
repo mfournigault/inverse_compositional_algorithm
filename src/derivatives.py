@@ -1,8 +1,8 @@
 import numpy as np
 from matrix_operators import AtA, sAtA
+from numba import jit
 from transformation import TransformType
 import utils
-
 
 def jacobian(transform_type, nx, ny):
     """
@@ -66,7 +66,7 @@ def jacobian(transform_type, nx, ny):
 
     return J
 
-    
+
 def hessian(DIJ):
     """
     Function to compute the Hessian matrix.
@@ -83,18 +83,47 @@ def hessian(DIJ):
     #         DIJ_slice = DIJ[i, j, :, :]
     #         if utils.valid_values(DIJ_slice):
     #             H += DIJ_slice.T @ DIJ_slice
+    DIJ_reshaped = DIJ.reshape(ny * nx, nz * nparams)
+    print("DIJ reshaped: ", DIJ_reshaped.shape)
+
+    # Create a boolean mask for valid values (excluding NaN and Inf)
+    valid_mask = np.isfinite(DIJ_reshaped)
+    print("valid mask: ", valid_mask.shape)
+     # Check if there are any valid values
+    if not np.any(valid_mask):
+        print("Warning: No valid values found in DIJ.")
+        raise ValueError("No valid values found in DIJ.")  # Or return a default value
+    
+    # Filter DIJ_reshaped based on the valid mask
+    DIJ_reshaped_valid = DIJ_reshaped[valid_mask]
+    # Reshape back to 2D if necessary (based on your specific requirements)
+    if DIJ_reshaped_valid.ndim == 1:
+        DIJ_reshaped_valid = DIJ_reshaped_valid.reshape(-1, nparams)
+    print("valid DIJ: ", DIJ_reshaped_valid.shape)
+    
+    # Calculate the Hessian using matrix multiplication on valid values
+    H = DIJ_reshaped_valid.T @ DIJ_reshaped_valid
+    print("hessian shape: ", H.shape)
+
     # Filter valid slices
     # valid_slices = np.array([utils.valid_values(DIJ[i, j, :, :]) for i in range(ny) for j in range(nx)])
     # valid_slices = valid_slices.reshape(ny, nx)
-    mask_DIJ = ~np.isnan(DIJ) & ~np.isinf(DIJ)
+    # mask_DIJ = np.ones((ny, nx, nz), dtype=bool)
+    # for n in range(nparams):
+    #     mask_DIJ &= ~np.isnan(DIJ[:,:,:,n]) & ~np.isinf(DIJ[:,:,:,n])
+    # print("Derivatives mask: ", mask_DIJ.shape)
     
-    # Extract valid slices of the steepest descent images
-    valid_DIJs = np.where(mask_DIJ, DIJ, 0) # replacing invalid values with 0 cannot work for the Hessian
+    # # Extract valid slices of the steepest descent images
+    # valid_DIJs = np.zeros((ny, nx, nz, nparams), dtype=np.float64)
+    # valid_DIJs[mask_DIJ] = DIJ[mask_DIJ]
     
-    # Compute the Hessian matrix with vectorized operations
-    H = np.einsum('...ij,...kj->...ik', valid_DIJs, valid_DIJs).sum(axis=0)
+    # # Compute the Hessian matrix with vectorized operations
+    # temp = np.einsum('...ji,...ik->...jk', valid_DIJs, valid_DIJs)
+    # print("hessian product: ", temp.shape)
+    # H = temp
     
     return H
+
 
 def hessian_robust(DIJ, rho, nparams):
     """

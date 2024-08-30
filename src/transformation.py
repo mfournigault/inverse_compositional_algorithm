@@ -32,6 +32,7 @@ class TransformType(Enum):
                 raise ValueError("Unknown transform type")
 
 
+@jit(nopython=True, fastmath=True, nogil=True, cache=True, parallel=True)
 def update_transform(p, dp, transform_type):
     """
     Update the transformation parameters based on the given type of transformation.

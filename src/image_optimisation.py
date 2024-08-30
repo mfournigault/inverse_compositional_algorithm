@@ -1,5 +1,7 @@
 import numpy as np
 from enum import Enum
+from numba import jit
+
 from matrix_operators import AtA, sAtA, Atb, sAtb
 import utils
 
@@ -90,7 +92,6 @@ def robust_error_function(DI, lambda_, type_):
     return rho
 
 
-
 def independent_vector(DIJ, DI, nparams):
     """
     Function to compute b=Sum(DIJ^t * DI)
@@ -115,20 +116,42 @@ def independent_vector(DIJ, DI, nparams):
     #         except IndexError:
     #             print(f"IndexError: i={i}, j={j}, DIJ.shape={DIJ.shape}, DI.shape={DI.shape}")
     #             raise
+    # Reshape DIJ and DI to 2D matrices
+    DIJ_reshaped = DIJ.reshape(ny * nx, nz * nparams)
+    DI_reshaped = DI.reshape(ny * nx, nz)
+    
+    # Create a boolean mask for valid values
+    valid_mask_dij = np.isfinite(DIJ_reshaped)
+    valid_mask_di = np.isfinite(DI_reshaped)    
+    
+    # Filter DIJ_reshaped and DI_reshaped based on the valid mask
+    DIJ_reshaped_valid = DIJ_reshaped[valid_mask_dij]
+    if DIJ_reshaped_valid.ndim == 1:
+        DIJ_reshaped_valid = DIJ_reshaped_valid.reshape(-1, nparams)
+    DI_reshaped_valid = DI_reshaped[valid_mask_di]
+    
+    # Calculate b using matrix multiplication
+    b = DIJ_reshaped_valid.T @ DI_reshaped_valid
+    print("b shape: ", b.shape)
     
     # Create a mask for valid values
     # valid_mask = np.all(utils.valid_values(DIJ), axis=(2, 3)) & np.all(utils.valid_values(DI), axis=2)
     # valid_mask = np.all(utils.valid_values(DIJ)) & np.all(utils.valid_values(DI))
 
     # Filter valid values
-    mask_DIJ = ~np.isnan(DIJ) & ~np.isinf(DIJ)
-    mask_DI = ~np.isnan(DI) & ~np.isinf(DI)
+    # mask_DIJ = np.ones((ny, nx, nz), dtype=bool)
+    # for n in range(nparams):
+    #     mask_DIJ &= ~np.isnan(DIJ[:,:,:,n]) & ~np.isinf(DIJ[:,:,:,n]) &~np.isnan(DI) & ~np.isinf(DI)
+    # print("Indep. vector mask_DIJ", mask_DIJ.shape)
+    # mask_DI = ~np.isnan(DI) & ~np.isinf(DI)
 
-    filtered_DIJ = np.where(mask_DIJ, DIJ, 0) # replacing invalid values with 0 cannot work for the independent vector
-    filtered_DI = np.where(mask_DI, DI, 0) # replacing invalid values with 0 cannot work for the independent vector
+    # valid_DIJs = np.zeros((ny, nx, nz, nparams), dtype=np.float64)
+    # valid_DIJs[mask_DIJ] = DIJ[mask_DIJ]
+    # valid_DI = np.zeros((ny, nx, nz), dtype=np.float64)
+    # valid_DI[mask_DIJ] = DI[mask_DIJ]
 
-    # Effectuer la multiplication en ignorant les valeurs NaN et Inf
-    result = np.einsum('...ij,...i->...j', filtered_DIJ, filtered_DI).sum(axis=0)
+    # # Effectuer la multiplication en ignorant les valeurs NaN et Inf
+    # b = np.einsum('...ij,...i->...j', valid_DIJs, valid_DI).sum(axis=0)
 
     return b
 
@@ -185,6 +208,7 @@ def parametric_solve(H_1, b, nparams):
     return np.sqrt(error), dp
 
 
+@jit(nopython=True, fastmath=True, nogil=True, cache=True, parallel=True)
 def steepest_descent_images(Ix, Iy, J, nparams):
     """
     Calculate the steepest descent images DI^t*J for optimization.
