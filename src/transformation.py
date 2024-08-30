@@ -1,5 +1,7 @@
 import numpy as np
 from enum import Enum
+from numba import jit
+
 from skimage import transform
 from skimage.exposure import rescale_intensity
 
@@ -10,6 +12,7 @@ class TransformType(Enum):
     AFFINITY = 4
     HOMOGRAPHY = 5
 
+    @jit
     def nparams(self):
         """
         Returns the number of parameters for the given transformation type.
@@ -133,8 +136,8 @@ def update_transform(p, dp, transform_type):
     
     return p
 
-
-def project(x, y, p, transform_type):
+@jit(nopython=True, fastmath=True, nogil=True, cache=True, parallel=True)
+def project(x, y, p, nparams):
     """
     Applies a transformation to the given coordinates (x, y) based on the specified transform type and parameters.
 
@@ -147,23 +150,28 @@ def project(x, y, p, transform_type):
     Returns:
         tuple: The transformed coordinates (xp, yp).
     """
-    if transform_type == TransformType.TRANSLATION:
+    # if transform_type == TransformType.TRANSLATION:
+    if nparams == 2:
         # p = (tx, ty)
         xp = x + p[0]
         yp = y + p[1]
-    elif transform_type == TransformType.EUCLIDEAN:
+    # elif transform_type == TransformType.EUCLIDEAN:
+    elif nparams == 3:
         # p = (tx, ty, theta)
         xp = np.cos(p[2]) * x - np.sin(p[2]) * y + p[0]
         yp = np.sin(p[2]) * x + np.cos(p[2]) * y + p[1]
-    elif transform_type == TransformType.SIMILARITY:
+    # elif transform_type == TransformType.SIMILARITY:
+    elif nparams == 4:
         # p = (tx, ty, a, b)
         xp = (1 + p[2]) * x - p[3] * y + p[0]
         yp = p[3] * x + (1 + p[2]) * y + p[1]
-    elif transform_type == TransformType.AFFINITY:
+    # elif transform_type == TransformType.AFFINITY:
+    elif nparams == 6:
         # p = (tx, ty, a00, a01, a10, a11)
         xp = (1 + p[2]) * x + p[3] * y + p[0]
         yp = p[4] * x + (1 + p[5]) * y + p[1]
-    elif transform_type == TransformType.HOMOGRAPHY:
+    # elif transform_type == TransformType.HOMOGRAPHY:
+    elif nparams == 8:
         # p = (h00, h01, ..., h21)
         d = p[6] * x + p[7] * y + 1
         xp = ((1 + p[0]) * x + p[1] * y + p[2]) / d

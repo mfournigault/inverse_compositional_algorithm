@@ -106,23 +106,29 @@ def independent_vector(DIJ, DI, nparams):
     ny, nx, nz = DI.shape # suppose that DI is not flattened
     b = np.zeros(nparams, dtype=np.float64)
 
-    for i in range(ny):
-        for j in range(nx):
-            # DIJ, DI are supposed to not be flattened
-            # b += Atb(
-            #     DIJ[(i * nx + j) * nparams * nz : (i * nx + j + 1) * nparams * nz],
-            #     DI[(i * nx + j) * nz : (i * nx + j + 1) * nz],
-            #     nz, nparams
-            # )
-            try:
-                # b += np.dot(DIJ[i, j, :, :].T, DI[i, j, :])
-                if utils.valid_values(DIJ[i, j, :, :]) and utils.valid_values(DI[i, j, :]):
-                    b += DIJ[i, j, :, :].T @ DI[i, j, :]
+    # for i in range(ny):
+    #     for j in range(nx):
+    #         try:
+    #             if utils.valid_values(DIJ[i, j, :, :]) and utils.valid_values(DI[i, j, :]):
+    #                 b += DIJ[i, j, :, :].T @ DI[i, j, :]
 
-            except IndexError:
-                print(f"IndexError: i={i}, j={j}, DIJ.shape={DIJ.shape}, DI.shape={DI.shape}")
-                raise
-            # b is flattened
+    #         except IndexError:
+    #             print(f"IndexError: i={i}, j={j}, DIJ.shape={DIJ.shape}, DI.shape={DI.shape}")
+    #             raise
+    
+    # Create a mask for valid values
+    # valid_mask = np.all(utils.valid_values(DIJ), axis=(2, 3)) & np.all(utils.valid_values(DI), axis=2)
+    # valid_mask = np.all(utils.valid_values(DIJ)) & np.all(utils.valid_values(DI))
+
+    # Filter valid values
+    mask_DIJ = ~np.isnan(DIJ) & ~np.isinf(DIJ)
+    mask_DI = ~np.isnan(DI) & ~np.isinf(DI)
+
+    filtered_DIJ = np.where(mask_DIJ, DIJ, 0) # replacing invalid values with 0 cannot work for the independent vector
+    filtered_DI = np.where(mask_DI, DI, 0) # replacing invalid values with 0 cannot work for the independent vector
+
+    # Effectuer la multiplication en ignorant les valeurs NaN et Inf
+    result = np.einsum('...ij,...i->...j', filtered_DIJ, filtered_DI).sum(axis=0)
 
     return b
 
@@ -204,11 +210,14 @@ def steepest_descent_images(Ix, Iy, J, nparams):
     # Initialize the output array
     DIJ = np.zeros((ny, nx, nz, nparams), dtype=np.float64)
     
-    for i in range(ny):
-        for j in range(nx):
-            for c in range(nz):
-                for n in range(nparams):
-                    # DIJ[k++]=Ix[p*nz+c]*J[2*p*nparams+n]+Iy[p*nz+c]*J[2*p*nparams+n+nparams];
-                    DIJ[i, j, c, n] = Ix[i, j, c] * J[i, j, n] + Iy[i, j, c] * J[i, j, n + nparams]
+    # Vectorized computation
+    print("Ix.shape", Ix.shape)
+    print("Iy.shape", Iy.shape)
+    print("J.shape", J.shape)
+    print("DIJ.shape", DIJ.shape)
+
+    for c in range(nz):
+        for n in range(nparams):
+            DIJ[:, :, c, n] = Ix[:, :, c] * J[:, :, n] + Iy[:, :, c] * J[:, :, n + nparams]
     
     return DIJ

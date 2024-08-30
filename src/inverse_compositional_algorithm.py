@@ -71,19 +71,8 @@ def inverse_compositional_algorithm(I1, I2, p, transform_type, nanifoutside, del
     H_1 = np.zeros((nparams, nparams), dtype=np.float64)  # inverse Hessian matrix
 
     # Evaluate the gradient of I1
-    #TODO: review the gradient dx and dy computation: the prewitt operator might not be the best choice
-    #TODO: review the scaling range of image intensities, they must be compatible with further computations, ie float64 in [0., 255.]
-    for channel in range(nz):
-        for i in range(1, ny-1):
-            for j in range(1, nx-1):
-                Ix[i, j, channel] = 0.5 * (I1[i, j+1, channel]-I1[i, j-1, channel])
-                Iy[i, j, channel] = 0.5 * (I1[i+1, j, channel]-I1[i-1, j, channel])
-        # Ix[:, :, channel] = prewitt_h(I1[:, :, channel])
-        # Iy[:, :, channel] = prewitt_v(I1[:, :, channel])
-    # imageio.imwrite("I1.png", img_as_ubyte(rescale_intensity(np.nan_to_num(I1, copy=True))))
-    # imageio.imwrite("I2.png", img_as_ubyte(rescale_intensity(np.nan_to_num(I2, copy=True))))
-    # imageio.imwrite("Ix.png", img_as_ubyte(rescale_intensity(np.nan_to_num(Ix, copy=True))))
-    # imageio.imwrite("Iy.png", img_as_ubyte(rescale_intensity(np.nan_to_num(Iy, copy=True))))
+    Ix[:, 1:-1, :] = 0.5 * (I1[:, 2:, :] - I1[:, :-2, :])
+    Iy[1:-1, :, :] = 0.5 * (I1[2:, :, :] - I1[:-2, :, :])
 
     # Like in the modified version of the algorithm, we discard boundary pixels
     if (nanifoutside is True and delta > 0):
@@ -120,7 +109,8 @@ def inverse_compositional_algorithm(I1, I2, p, transform_type, nanifoutside, del
         # p_i = tr.matrix2params(np.linalg.inv(tr.params2matrix(p, transform_type)), transform_type)
         # Iw = tr.transform_image(I2, transform_type, p_i)
         
-        Iw = bi.bicubic_interpolation_image(I2, p, transform_type, nanifoutside, delta) 
+        # Iw = bi.bicubic_interpolation_image(I2, p, transform_type, nanifoutside, delta) 
+        Iw = bi.bicubic_interpolation_image(I2, p, transform_type.nparams(), nanifoutside, delta) 
         # iw_name = f"iw_{niter}.png"
         # imageio.imwrite(iw_name, img_as_ubyte(rescale_intensity(np.nan_to_num(Iw, copy=True))))
         
@@ -222,14 +212,8 @@ def robust_inverse_compositional_algorithm(
     H_1 = np.zeros((nparams, nparams), dtype=np.float64)  # inverse Hessian matrix
 
     # Evaluate the gradient of I1
-    #TODO: review the gradient dx and dy computation: the prewitt operator might not be the best choice
-    for channel in range(nz):
-        for i in range(1, ny-1):
-            for j in range(1, nx-1):
-                Ix[i, j, channel] = 0.5 * (I1[i, j+1, channel]-I1[i, j-1, channel])
-                Iy[i, j, channel] = 0.5 * (I1[i+1, j, channel]-I1[i-1, j, channel])
-        # Ix[:, :, channel] = sobel(I1[:, :, channel], axis=1)
-        # Iy[:, :, channel] = sobel(I1[:, :, channel], axis=0)
+    Ix[:, 1:-1, :] = 0.5 * (I1[:, 2:, :] - I1[:, :-2, :])
+    Iy[1:-1, :, :] = 0.5 * (I1[2:, :, :] - I1[:-2, :, :])
 
      # Like in the modified version of the algorithm, we discard boundary pixels
     if (nanifoutside is True and delta > 0):

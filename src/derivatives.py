@@ -21,80 +21,48 @@ def jacobian(transform_type, nx, ny):
     """
     nparams = transform_type.nparams()
 
-    J = np.zeros((2 * nx * ny * nparams), dtype=np.float64)
+    J = np.zeros((ny, nx, 2 * nparams), dtype=np.float64)
+
+    y, x = np.mgrid[0:ny, 0:nx]
 
     match transform_type:
         case TransformType.TRANSLATION:
-            for i in range(nx * ny):
-                c = 2 * i * nparams
-                J[c] = 1.0
-                J[c + 1] = 0.0
-                J[c + 2] = 0.0
-                J[c + 3] = 1.0
+            J[:, :, 0] = 1.0
+            J[:, :, 3] = 1.0
 
         case TransformType.EUCLIDEAN:
-            for i in range(ny):
-                for j in range(nx):
-                    c = 2 * (i * nx + j) * nparams
-                    J[c] = 1.0
-                    J[c + 1] = 0.0
-                    J[c + 2] = -i
-                    J[c + 3] = 0.0
-                    J[c + 4] = 1.0
-                    J[c + 5] = j
+            J[:, :, 0] = 1.0
+            J[:, :, 2] = -y
+            J[:, :, 4] = 1.0
+            J[:, :, 5] = x
 
         case TransformType.SIMILARITY:
-            for i in range(ny):
-                for j in range(nx):
-                    c = 2 * (i * nx + j) * nparams
-                    J[c] = 1.0
-                    J[c + 1] = 0.0
-                    J[c + 2] = j
-                    J[c + 3] = -i
-                    J[c + 4] = 0.0
-                    J[c + 5] = 1.0
-                    J[c + 6] = i
-                    J[c + 7] = j
+            J[:, :, 0] = 1.0
+            J[:, :, 2] = x
+            J[:, :, 3] = -y
+            J[:, :, 5] = 1.0
+            J[:, :, 6] = y
+            J[:, :, 7] = x
 
         case TransformType.AFFINITY:
-            for i in range(ny):
-                for j in range(nx):
-                    c = 2 * (i * nx + j) * nparams
-                    J[c] = 1.0
-                    J[c + 1] = 0.0
-                    J[c + 2] = j
-                    J[c + 3] = i
-                    J[c + 4] = 0.0
-                    J[c + 5] = 0.0
-                    J[c + 6] = 0.0
-                    J[c + 7] = 1.0
-                    J[c + 8] = 0.0
-                    J[c + 9] = 0.0
-                    J[c + 10] = j
-                    J[c + 11] = i
+            J[:, :, 0] = 1.0
+            J[:, :, 2] = x
+            J[:, :, 3] = y
+            J[:, :, 7] = 1.0
+            J[:, :, 10] = x
+            J[:, :, 11] = y
 
         case TransformType.HOMOGRAPHY:
-            for i in range(ny):
-                for j in range(nx):
-                    c = 2 * (i * nx + j) * nparams
-                    J[c] = j
-                    J[c + 1] = i
-                    J[c + 2] = 1.0
-                    J[c + 3] = 0.0
-                    J[c + 4] = 0.0
-                    J[c + 5] = 0.0
-                    J[c + 6] = -j * j
-                    J[c + 7] = -j * i
-                    J[c + 8] = 0.0
-                    J[c + 9] = 0.0
-                    J[c + 10] = 0.0
-                    J[c + 11] = j
-                    J[c + 12] = i
-                    J[c + 13] = 1.0
-                    J[c + 14] = -j * i
-                    J[c + 15] = -i * i
-
-    J = J.reshape((ny, nx, 2 * nparams))
+            J[:, :, 0] = x
+            J[:, :, 1] = y
+            J[:, :, 2] = 1.0
+            J[:, :, 6] = -x * x
+            J[:, :, 7] = -x * y
+            J[:, :, 11] = x
+            J[:, :, 12] = y
+            J[:, :, 13] = 1.0
+            J[:, :, 14] = -x * y
+            J[:, :, 15] = -y * y
 
     return J
 
@@ -106,15 +74,25 @@ def hessian(DIJ):
     """
     ny, nx, nz, nparams = DIJ.shape[0], DIJ.shape[1], DIJ.shape[2], DIJ.shape[3]
     # Initialize the Hessian to zero
-    H = np.zeros((nparams, nparams), dtype=np.float64)
+    # H = np.zeros((nparams, nparams), dtype=np.float64)
     
-    # Calculate the Hessian in a neighbor window
-    for i in range(ny):
-        for j in range(nx):
-            # DIJ_slice = DIJ[(i * nx + j) * nz * nparams : (i * nx + j + 1) * nz * nparams]
-            DIJ_slice = DIJ[i, j, :, :]
-            if utils.valid_values(DIJ_slice):
-                H += DIJ_slice.T @ DIJ_slice
+    # # Calculate the Hessian in a neighbor window
+    # for i in range(ny):
+    #     for j in range(nx):
+    #         # DIJ_slice = DIJ[(i * nx + j) * nz * nparams : (i * nx + j + 1) * nz * nparams]
+    #         DIJ_slice = DIJ[i, j, :, :]
+    #         if utils.valid_values(DIJ_slice):
+    #             H += DIJ_slice.T @ DIJ_slice
+    # Filter valid slices
+    # valid_slices = np.array([utils.valid_values(DIJ[i, j, :, :]) for i in range(ny) for j in range(nx)])
+    # valid_slices = valid_slices.reshape(ny, nx)
+    mask_DIJ = ~np.isnan(DIJ) & ~np.isinf(DIJ)
+    
+    # Extract valid slices of the steepest descent images
+    valid_DIJs = np.where(mask_DIJ, DIJ, 0) # replacing invalid values with 0 cannot work for the Hessian
+    
+    # Compute the Hessian matrix with vectorized operations
+    H = np.einsum('...ij,...kj->...ik', valid_DIJs, valid_DIJs).sum(axis=0)
     
     return H
 

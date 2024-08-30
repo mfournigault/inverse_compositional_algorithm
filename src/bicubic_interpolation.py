@@ -1,6 +1,9 @@
 import numpy as np
+from numba import jit, prange
+
 import transformation as tf
 
+@jit(nopython=True, fastmath=True, nogil=True, cache=True, parallel=True)
 def neumann_bc(x: int, nx: int) -> tuple[int, bool]:
     """
     Apply Neumann boundary conditions to the given value.
@@ -19,6 +22,7 @@ def neumann_bc(x: int, nx: int) -> tuple[int, bool]:
     return x
 
 
+@jit(nopython=True, fastmath=True, nogil=True, cache=True, parallel=True)
 def cubic_interpolation(v: np.ndarray, x: float) -> float:
     """
     Performs cubic interpolation using the given control points and the interpolation parameter.
@@ -36,6 +40,7 @@ def cubic_interpolation(v: np.ndarray, x: float) -> float:
                                     + x * (3.0 * (v[1] - v[2]) + v[3] - v[0])))
 
 
+@jit(nopython=True, fastmath=True, nogil=True, cache=True, parallel=True)
 def bicubic_interpolation_array(p, x, y):
     """
     Bicubic interpolation in two dimensions.
@@ -56,6 +61,7 @@ def bicubic_interpolation_array(p, x, y):
     return cubic_interpolation(v, x)
 
 
+@jit(nopython=True, fastmath=True, nogil=True, cache=True, parallel=True)
 def bicubic_interpolation_point(input, uu, vv, nx, ny, nz, k):
     """
     Performs bicubic interpolation at a given point.
@@ -110,28 +116,30 @@ def bicubic_interpolation_point(input, uu, vv, nx, ny, nz, k):
     
     return bicubic_interpolation_array(pol, uu - x, vv - y)
 
-
+@jit(nopython=True, fastmath=True, nogil=True, cache=True, parallel=True)
 def bicubic_interpolation_image(
     input, 
-    params, 
-    transform_type, 
+    params,
+    nparams,
+    # transform_type, 
     nanifoutside, 
     delta):
     
     ny, nx, nz = input.shape
     output = np.zeros((ny, nx, nz), dtype=np.float64)
 
-    nparams = transform_type.nparams()
+    # nparams = transform_type.nparams()
 
     if nanifoutside:
         out_value = np.nan
     else:
         out_value = 0.0
     
-    for i in range(ny):
-        for j in range(nx):
+    for i in prange(ny):
+        for j in prange(nx):
             p = i * nx + j
-            x, y = tf.project(j, i, params, transform_type)
+            # x, y = tf.project(j, i, params, transform_type)
+            x, y = tf.project(j, i, params, nparams)
             out = (x < delta) or (x > nx - 1 - delta) or (y < delta) or (y > ny - 1 - delta)
 
             if out:
