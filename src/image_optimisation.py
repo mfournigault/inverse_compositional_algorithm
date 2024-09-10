@@ -107,51 +107,28 @@ def independent_vector(DIJ, DI, nparams):
     ny, nx, nz = DI.shape # suppose that DI is not flattened
     b = np.zeros(nparams, dtype=np.float64)
 
-    # for i in range(ny):
-    #     for j in range(nx):
-    #         try:
-    #             if utils.valid_values(DIJ[i, j, :, :]) and utils.valid_values(DI[i, j, :]):
-    #                 b += DIJ[i, j, :, :].T @ DI[i, j, :]
+    # Create masked arrays with NaN values masked
+    # DIJ_masked = np.ma.masked_where(~np.isfinite(DIJ), DIJ)
+    # DI_masked = np.ma.masked_where(~np.isfinite(DI), DI)
 
-    #         except IndexError:
-    #             print(f"IndexError: i={i}, j={j}, DIJ.shape={DIJ.shape}, DI.shape={DI.shape}")
-    #             raise
-    # Reshape DIJ and DI to 2D matrices
-    DIJ_reshaped = DIJ.reshape(ny * nx, nz * nparams)
-    DI_reshaped = DI.reshape(ny * nx, nz)
-    
-    # Create a boolean mask for valid values
-    valid_mask_dij = np.isfinite(DIJ_reshaped)
-    valid_mask_di = np.isfinite(DI_reshaped)    
-    
-    # Filter DIJ_reshaped and DI_reshaped based on the valid mask
-    DIJ_reshaped_valid = DIJ_reshaped[valid_mask_dij]
-    if DIJ_reshaped_valid.ndim == 1:
-        DIJ_reshaped_valid = DIJ_reshaped_valid.reshape(-1, nparams)
-    DI_reshaped_valid = DI_reshaped[valid_mask_di]
-    
-    # Calculate b using matrix multiplication
-    b = DIJ_reshaped_valid.T @ DI_reshaped_valid
-    print("b shape: ", b.shape)
-    
-    # Create a mask for valid values
-    # valid_mask = np.all(utils.valid_values(DIJ), axis=(2, 3)) & np.all(utils.valid_values(DI), axis=2)
-    # valid_mask = np.all(utils.valid_values(DIJ)) & np.all(utils.valid_values(DI))
+    # # Fill masked values with zeros
+    # DIJ_filled = DIJ_masked.filled(0)
+    # DI_filled = DI_masked.filled(0)
 
-    # Filter valid values
-    # mask_DIJ = np.ones((ny, nx, nz), dtype=bool)
-    # for n in range(nparams):
-    #     mask_DIJ &= ~np.isnan(DIJ[:,:,:,n]) & ~np.isinf(DIJ[:,:,:,n]) &~np.isnan(DI) & ~np.isinf(DI)
-    # print("Indep. vector mask_DIJ", mask_DIJ.shape)
-    # mask_DI = ~np.isnan(DI) & ~np.isinf(DI)
+    DIJ_filled = np.where(np.isfinite(DIJ), DIJ, 0)
+    DI_filled = np.where(np.isfinite(DI), DI, 0)
 
-    # valid_DIJs = np.zeros((ny, nx, nz, nparams), dtype=np.float64)
-    # valid_DIJs[mask_DIJ] = DIJ[mask_DIJ]
-    # valid_DI = np.zeros((ny, nx, nz), dtype=np.float64)
-    # valid_DI[mask_DIJ] = DI[mask_DIJ]
+    print("DIJ_filled shape: ", DIJ_filled.shape)
+    print("DI_filled shape: ", DI_filled.shape)
+    # Vectorized computation using einsum for efficiency
+    DIJt = np.einsum("ijlk->ijkl", DIJ_filled)
+    print("DIJt shape: ", DIJt.shape)
+    prod = np.einsum("ijkl,ijl->ijk", DIJt, DI_filled)
+    b = np.einsum("ijl->l", prod)
 
-    # # Effectuer la multiplication en ignorant les valeurs NaN et Inf
-    # b = np.einsum('...ij,...i->...j', valid_DIJs, valid_DI).sum(axis=0)
+    # Convert the masked array b to a regular NumPy array
+    # b_unmasked = b.filled(0)
+    # print("b shape: ", b_unmasked.shape)
 
     return b
 
@@ -196,7 +173,7 @@ def independent_vector_robust(DIJ, DI, rho, nparams):
 def parametric_solve(H_1, b, nparams):
     # Convert inputs to numpy arrays
     # H_1 = np.array(H_1).reshape((nparams, nparams))
-    b = np.array(b, dtype=np.float64)
+    # b = np.array(b, dtype=np.float64)
     
     # Perform matrix-vector multiplication
     # dp = np.dot(H_1, b)
