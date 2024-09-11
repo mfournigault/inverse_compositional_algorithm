@@ -118,11 +118,8 @@ def independent_vector(DIJ, DI, nparams):
     DIJ_filled = np.where(np.isfinite(DIJ), DIJ, 0)
     DI_filled = np.where(np.isfinite(DI), DI, 0)
 
-    print("DIJ_filled shape: ", DIJ_filled.shape)
-    print("DI_filled shape: ", DI_filled.shape)
     # Vectorized computation using einsum for efficiency
     DIJt = np.einsum("ijlk->ijkl", DIJ_filled)
-    print("DIJt shape: ", DIJt.shape)
     prod = np.einsum("ijkl,ijl->ijk", DIJt, DI_filled)
     b = np.einsum("ijl->l", prod)
 
@@ -212,11 +209,6 @@ def steepest_descent_images(Ix, Iy, J, nparams):
     DIJ = np.zeros((ny, nx, nz, nparams), dtype=np.float64)
     
     # Vectorized computation
-    print("Ix.shape", Ix.shape)
-    print("Iy.shape", Iy.shape)
-    print("J.shape", J.shape)
-    print("DIJ.shape", DIJ.shape)
-
     for c in range(nz):
         for n in range(nparams):
             DIJ[:, :, c, n] = Ix[:, :, c] * J[:, :, n] + Iy[:, :, c] * J[:, :, n + nparams]

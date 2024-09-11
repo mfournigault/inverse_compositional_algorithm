@@ -12,7 +12,6 @@ import transformation as tr
 import bicubic_interpolation as bi
 import zoom as zm
 import constants as cts
-import transformation as tr
 
  
 def inverse_compositional_algorithm(I1, I2, p, transform_type, nanifoutside, delta, TOL, verbose):
@@ -103,37 +102,15 @@ def inverse_compositional_algorithm(I1, I2, p, transform_type, nanifoutside, del
     
     while error > TOL and niter < cts.MAX_ITER:
         # Warp image I2
-        #TODO: replace bicubic_interpolation_image by skimage.transform.warp -> done
-        # bi.bicubic_interpolation_image(I2, Iw, p, transform_type, nx, ny, nz)
-        # Must use the inverse of p to calculate Iw = I2(x'(x;p))
-        # p_i = tr.matrix2params(np.linalg.inv(tr.params2matrix(p, transform_type)), transform_type)
-        # Iw = tr.transform_image(I2, transform_type, p_i)
-        
-        # Iw = bi.bicubic_interpolation_image(I2, p, transform_type, nanifoutside, delta) 
-        Iw = bi.bicubic_interpolation_image(I2, p, transform_type.nparams(), nanifoutside, delta) 
-        # iw_name = f"iw_{niter}.png"
-        # imageio.imwrite(iw_name, img_as_ubyte(rescale_intensity(np.nan_to_num(Iw, copy=True))))
-        
-        # Iw = tr.transform_image(I2, transform_type, p)
-        # print("I1 range: ", np.min(I1), np.max(I1))
-        # print("I2 range: ", np.min(I2), np.max(I2))
-        # print("Iw range: ", np.min(Iw), np.max(Iw))
+        # Iw = bi.bicubic_interpolation_image(I2, p, transform_type.nparams(), nanifoutside, delta) 
+        Iw = bi.bicubic_interpolation_skimage(I2, p, transform_type, nanifoutside, delta) 
         
         # Compute the error image (I1-I2w)
         # difference_image(I1, Iw, DI, nx, ny, nz)
         DI = Iw - I1
-        # di_name = f"di_{niter}.png"
-        # imageio.imwrite(di_name, img_as_ubyte(rescale_intensity(np.nan_to_num(DI, copy=True))))
-        
-        # print("DIJ range: ", np.min(DIJ), np.max(DIJ))
-        # print("H range: ", np.min(H), np.max(H))
-        # print("DI range: ", np.min(DI), np.max(DI))
         
         # Compute the independent vector
-        #TODO: correct this function to work with non flat images and matrices -> done
         b = io.independent_vector(DIJ, DI, nparams) # b is flattened
-        # print("b: ", b)
-        # print("b range: ", np.min(b), np.max(b))
         
         # Solve equation and compute increment of the motion 
         error, dp = io.parametric_solve(H_1, b, nparams) # H_1 is not flattened, b is flattened

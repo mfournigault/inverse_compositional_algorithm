@@ -77,21 +77,12 @@ def hessian(DIJ):
     # H = np.zeros((nparams, nparams), dtype=np.float64)
     
     # # Calculate the Hessian in a neighbor window
-    # for i in range(ny):
-    #     for j in range(nx):
-    #         # DIJ_slice = DIJ[(i * nx + j) * nz * nparams : (i * nx + j + 1) * nz * nparams]
-    #         DIJ_slice = DIJ[i, j, :, :]
-    #         if utils.valid_values(DIJ_slice):
-    #             H += DIJ_slice.T @ DIJ_slice
     DIJ_reshaped = DIJ.reshape(ny * nx, nz * nparams)
-    print("DIJ reshaped: ", DIJ_reshaped.shape)
 
     # Create a boolean mask for valid values (excluding NaN and Inf)
     valid_mask = np.isfinite(DIJ_reshaped)
-    print("valid mask: ", valid_mask.shape)
      # Check if there are any valid values
     if not np.any(valid_mask):
-        print("Warning: No valid values found in DIJ.")
         raise ValueError("No valid values found in DIJ.")  # Or return a default value
     
     # Filter DIJ_reshaped based on the valid mask
@@ -99,28 +90,11 @@ def hessian(DIJ):
     # Reshape back to 2D if necessary (based on your specific requirements)
     if DIJ_reshaped_valid.ndim == 1:
         DIJ_reshaped_valid = DIJ_reshaped_valid.reshape(-1, nparams)
-    print("valid DIJ: ", DIJ_reshaped_valid.shape)
     
     # Calculate the Hessian using matrix multiplication on valid values
+    # MFT: will H still get the correct shape in any case?
     H = DIJ_reshaped_valid.T @ DIJ_reshaped_valid
-    print("hessian shape: ", H.shape)
 
-    # Filter valid slices
-    # valid_slices = np.array([utils.valid_values(DIJ[i, j, :, :]) for i in range(ny) for j in range(nx)])
-    # valid_slices = valid_slices.reshape(ny, nx)
-    # mask_DIJ = np.ones((ny, nx, nz), dtype=bool)
-    # for n in range(nparams):
-    #     mask_DIJ &= ~np.isnan(DIJ[:,:,:,n]) & ~np.isinf(DIJ[:,:,:,n])
-    # print("Derivatives mask: ", mask_DIJ.shape)
-    
-    # # Extract valid slices of the steepest descent images
-    # valid_DIJs = np.zeros((ny, nx, nz, nparams), dtype=np.float64)
-    # valid_DIJs[mask_DIJ] = DIJ[mask_DIJ]
-    
-    # # Compute the Hessian matrix with vectorized operations
-    # temp = np.einsum('...ji,...ik->...jk', valid_DIJs, valid_DIJs)
-    # print("hessian product: ", temp.shape)
-    # H = temp
     
     return H
 
