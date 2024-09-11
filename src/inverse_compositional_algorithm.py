@@ -328,9 +328,11 @@ def pyramidal_inverse_compositional_algorithm(
         nx[s], ny[s] = zm.zoom_size(nx[s-1], ny[s-1], nu)
         #TODO: replace zoom_out by skimage.transform.rescale -> done
         # I1s[s] = zm.zoom_out(I1s[s-1], nx[s-1], ny[s-1], nzz, nu)
-        I1s.append(rescale(I1s[s-1], nu, mode='constant', cval=0, anti_aliasing=True, channel_axis=2, preserve_range=True))
+        I1s.append(rescale(I1s[s-1], nu, mode='constant', cval=0, order=3, #bicubic interpolation
+                            anti_aliasing=True, channel_axis=2, preserve_range=True))
         # I2s[s] = zm.zoom_out(I2s[s-1], nx[s-1], ny[s-1], nzz, nu)
-        I2s.append(rescale(I2s[s-1], nu, mode='constant', cval=0, anti_aliasing=True, channel_axis=2, preserve_range=True))
+        I2s.append(rescale(I2s[s-1], nu, mode='constant', cval=0, order=3, #bicubic interpolation
+                            anti_aliasing=True, channel_axis=2, preserve_range=True))
         ps[s] = np.zeros(nparams, dtype=np.float64)
 
     # Function implementation...
