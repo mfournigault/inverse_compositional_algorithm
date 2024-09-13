@@ -15,7 +15,12 @@ For the moment, not all the improvements have been implemented in the code. Only
 The python implementation is based on numpy and skimage libraries.
 In consequence, results on transformation and error calculations may differ from those obtained by the original C++ code.
 
-## 3. Methodology of validation
+## 3. Environment of execution
+The environment of execution is defined in the file requirements.txt of the project.
+The version of python used is 3.11.
+
+
+## 4. Methodology of validation
 For each modification made in the code, we propose the following methodology to validate the code:
 - start by validating the simple and robust version of the algorithm, with only one scale,
 - compare the results with those obtained with the original C++ code executed on the same images,
@@ -28,7 +33,7 @@ With more than one scale, the pyramidal version should converge to a good soluti
 
 Plotting graph of the error and dp values of iterations and comparing them to reference values can be a good way to validate the code.
 
-## 4. Simple version results
+## 5. Simple version results
 ### 1. Reference results
 ./inverse_compositional_algorithm ./data2/rubber_whale_tr.png ./data2/rubber_whale.png -t 2 -r 0 -c 0 -p 1 -d 10 -g 0 -v -n 
 arameters: scales=1, zoom=0.500000, TOL=0.001000, transform type=2, robust function=0, lambda=0.000000, output file=transform.mat, delta=10, nanifoutside=1, graymethod=0, first scale=0, gradient type=0, type output=0
