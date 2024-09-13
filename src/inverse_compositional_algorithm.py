@@ -335,7 +335,7 @@ def pyramidal_inverse_compositional_algorithm(
         else:
             if verbose:
                 print(f"(Robust error function {robust_type})")
-            robust_inverse_compositional_algorithm(
+            ps[s], error, DI, Iw = robust_inverse_compositional_algorithm(
                 I1=I1s[s], 
                 I2=I2s[s], 
                 p=ps[s], 

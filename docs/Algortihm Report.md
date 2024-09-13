@@ -342,3 +342,98 @@ Iteration 2: |Dp|=0.000458: p=(-0.000282 0.000022 0.111108 -0.000001)
 The results of the python implementation are available in the notebook `inverse_compositional_algorithm.ipynb`.
 The results obtained with the python implementation are very similar to the reference results, including for the mullti-scale algorithm.
 This validates the implementation of the algorithm in python.
+
+## 6. Robust version results
+### 1. Reference results
+./inverse_compositional_algorithm ./data2/rubber_whale_tr.png ./data2/rubber_whale.png -t 2 -r 4 -c 0 -p 1 -d 10 -g 0 -v -n 3
+Parameters: scales=3, zoom=0.500000, TOL=0.001000, transform type=2, robust function=4, lambda=0.000000, output file=transform.mat, delta=10, nanifoutside=1, graymethod=0, first scale=0, gradient type=0, type output=0
+Scale: 2 (Robust error function 4)
+|Dp|=1.380177: p=(-1.250102 -0.584923), lambda=72.000000
+|Dp|=1.160920: p=(-2.284002 -1.112925), lambda=64.800000
+|Dp|=0.297598: p=(-2.533152 -1.275679), lambda=58.320000
+|Dp|=0.040185: p=(-2.495009 -1.263030), lambda=52.488000
+|Dp|=0.006442: p=(-2.501303 -1.264404), lambda=47.239200
+|Dp|=0.001044: p=(-2.500269 -1.264259), lambda=42.515280
+|Dp|=0.000159: p=(-2.500429 -1.264255), lambda=38.263752
+Scale: 1 (Robust error function 4)
+|Dp|=0.034227: p=(-4.999723 -2.494302), lambda=72.000000
+|Dp|=0.006760: p=(-5.000125 -2.501050), lambda=64.800000
+|Dp|=0.001332: p=(-5.000051 -2.499721), lambda=58.320000
+|Dp|=0.000257: p=(-5.000066 -2.499977), lambda=52.488000
+Scale: 0 (Robust error function 4)
+|Dp|=0.000139: p=(-10.000000 -5.000000), lambda=72.000000
+
+./inverse_compositional_algorithm ./data2/rubber_whale_rt.png ./data2/rubber_whale.png -t 3 -r 4 -c 0 -p 1 -d 10 -g 0 -v -n 3
+Parameters: scales=3, zoom=0.500000, TOL=0.001000, transform type=3, robust function=4, lambda=0.000000, output file=transform.mat, delta=10, nanifoutside=1, graymethod=0, first scale=0, gradient type=0, type output=0
+Scale: 2 (Robust error function 4)
+|Dp|=0.490404: p=(0.304926 -0.384058 -0.004001), lambda=72.000000
+|Dp|=0.491950: p=(0.628362 -0.754713 -0.008296), lambda=64.800000
+|Dp|=0.469007: p=(0.951079 -1.095004 -0.013161), lambda=58.320000
+|Dp|=0.374179: p=(1.216846 -1.358319 -0.019726), lambda=52.488000
+|Dp|=0.143893: p=(1.326261 -1.451217 -0.029900), lambda=47.239200
+|Dp|=0.141008: p=(1.244363 -1.337295 -0.043960), lambda=42.515280
+|Dp|=0.403871: p=(0.982176 -1.030583 -0.061207), lambda=38.263752
+|Dp|=0.611352: p=(0.575339 -0.574651 -0.080199), lambda=34.437377
+|Dp|=0.638208: p=(0.133432 -0.114466 -0.096256), lambda=30.993639
+|Dp|=0.194853: p=(-0.014372 0.012437 -0.100392), lambda=27.894275
+|Dp|=0.023612: p=(0.003889 -0.002524 -0.099931), lambda=25.104848
+|Dp|=0.003102: p=(0.001440 -0.000620 -0.099987), lambda=22.594363
+|Dp|=0.000350: p=(0.001725 -0.000824 -0.099980), lambda=20.334927
+Scale: 1 (Robust error function 4)
+|Dp|=0.004406: p=(-0.000386 0.000520 -0.100006), lambda=72.000000
+|Dp|=0.000694: p=(0.000212 0.000167 -0.100001), lambda=64.800000
+Scale: 0 (Robust error function 4)
+|Dp|=0.000519: p=(-0.000019 0.000063 -0.100000), lambda=72.000000
+
+./inverse_compositional_algorithm ./data2/rubber_whale_eu.png ./data2/rubber_whale.png -t 3 -r 4 -c 0 -p 1 -d 10 -g 0 -v -n 3
+Parameters: scales=3, zoom=0.500000, TOL=0.001000, transform type=3, robust function=4, lambda=0.000000, output file=transform.mat, delta=10, nanifoutside=1, graymethod=0, first scale=0, gradient type=0, type output=0
+Scale: 2 (Robust error function 4)
+|Dp|=0.383129: p=(0.031471 -0.381789 -0.005898), lambda=72.000000
+|Dp|=0.416312: p=(0.067546 -0.796492 -0.011791), lambda=64.800000
+|Dp|=0.388467: p=(0.060923 -1.184843 -0.018555), lambda=58.320000
+|Dp|=0.362796: p=(-0.015728 -1.539358 -0.026622), lambda=52.488000
+|Dp|=0.348366: p=(-0.320987 -1.706753 -0.039061), lambda=47.239200
+|Dp|=0.467276: p=(-0.787622 -1.725999 -0.054152), lambda=42.515280
+|Dp|=0.643031: p=(-1.411702 -1.572013 -0.071511), lambda=38.263752
+|Dp|=0.781855: p=(-2.129335 -1.262200 -0.089257), lambda=34.437377
+|Dp|=0.549933: p=(-2.610027 -0.995280 -0.099998), lambda=30.993639
+|Dp|=0.003975: p=(-2.613780 -0.993972 -0.100011), lambda=27.894275
+|Dp|=0.000366: p=(-2.613433 -0.994087 -0.100010), lambda=25.104848
+Scale: 1 (Robust error function 4)
+|Dp|=0.002797: p=(-5.224174 -1.988932 -0.099995), lambda=72.000000
+|Dp|=0.000468: p=(-5.224611 -1.988764 -0.099998), lambda=64.800000
+Scale: 0 (Robust error function 4)
+|Dp|=0.001036: p=(-10.449167 -3.976494 -0.100000), lambda=72.000000
+|Dp|=0.000194: p=(-10.449181 -3.976687 -0.100000), lambda=64.800000
+
+./inverse_compositional_algorithm ./data2/rubber_whale_zo.png ./data2/rubber_whale.png -t 4 -r 4 -c 0 -p 1 -d 10 -g 0 -v -n 3
+
+Parameters: scales=3, zoom=0.500000, TOL=0.001000, transform type=4, robust function=4, lambda=0.000000, output file=transform.mat, delta=10, nanifoutside=1, graymethod=0, first scale=0, gradient type=0, type output=0
+Scale: 2 (Robust error function 4)
+|Dp|=0.576213: p=(0.521129 0.250926 0.003806 0.000427), lambda=72.000000
+|Dp|=0.532385: p=(0.988143 0.516606 0.009282 0.002196), lambda=64.800000
+|Dp|=0.554406: p=(1.435871 0.857161 0.014693 0.003652), lambda=58.320000
+|Dp|=0.596619: p=(1.871099 1.281772 0.019169 0.004823), lambda=52.488000
+|Dp|=0.224121: p=(1.966060 1.491833 0.029634 0.005047), lambda=47.239200
+|Dp|=0.280911: p=(1.678743 1.431442 0.046977 0.003823), lambda=42.515280
+|Dp|=0.529568: p=(1.213643 1.110431 0.067871 0.002709), lambda=38.263752
+|Dp|=0.723817: p=(0.627559 0.582204 0.090497 0.001787), lambda=34.437377
+|Dp|=0.679056: p=(0.071671 0.074571 0.108927 0.000209), lambda=30.993639
+|Dp|=0.100077: p=(-0.010162 -0.000714 0.111377 -0.000128), lambda=27.894275
+|Dp|=0.017576: p=(0.005777 0.010556 0.110945 -0.000012), lambda=25.104848
+|Dp|=0.003090: p=(0.002774 0.008894 0.111020 -0.000041), lambda=22.594363
+|Dp|=0.000542: p=(0.003324 0.009139 0.111007 -0.000034), lambda=20.334927
+Scale: 1 (Robust error function 4)
+|Dp|=0.015037: p=(-0.000031 0.002963 0.111132 0.000002), lambda=72.000000
+|Dp|=0.002851: p=(0.001385 0.005796 0.111107 -0.000004), lambda=64.800000
+|Dp|=0.000543: p=(0.001090 0.005269 0.111112 -0.000003), lambda=58.320000
+Scale: 0 (Robust error function 4)
+|Dp|=0.011423: p=(-0.000816 -0.001795 0.111105 -0.000002), lambda=72.000000
+|Dp|=0.002267: p=(-0.000041 0.000601 0.111108 -0.000001), lambda=64.800000
+|Dp|=0.000438: p=(-0.000247 0.000160 0.111107 -0.000002), lambda=58.320000
+
+### 2. Results of the python implementation
+The results of the python implementation are available in the notebook `inverse_compositional_algorithm_robust.ipynb`.
+The results obtained with the python implementation are correct when we use several scales, we can converge to a good solution.
+Nevertheless when we compare these results to the reference results, we can see that the gradient dp converges much slower than in the reference results.
+It should not be the case, so there is a problem of calculation in the python implementation to solve.
