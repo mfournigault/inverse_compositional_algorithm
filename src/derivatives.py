@@ -73,29 +73,13 @@ def hessian(DIJ):
     The Hessian is equal to DIJ^T * DIJ.
     """
     ny, nx, nz, nparams = DIJ.shape[0], DIJ.shape[1], DIJ.shape[2], DIJ.shape[3]
-    # Initialize the Hessian to zero
-    # H = np.zeros((nparams, nparams), dtype=np.float64)
     
-    # # Calculate the Hessian in a neighbor window
-    DIJ_reshaped = DIJ.reshape(ny * nx, nz * nparams)
+    H = np.zeros((nparams, nparams), dtype=np.float64)
 
-    # Create a boolean mask for valid values (excluding NaN and Inf)
-    valid_mask = np.isfinite(DIJ_reshaped)
-     # Check if there are any valid values
-    if not np.any(valid_mask):
-        raise ValueError("No valid values found in DIJ.")  # Or return a default value
-    
-    # Filter DIJ_reshaped based on the valid mask
-    DIJ_reshaped_valid = DIJ_reshaped[valid_mask]
-    # Reshape back to 2D if necessary (based on your specific requirements)
-    if DIJ_reshaped_valid.ndim == 1:
-        DIJ_reshaped_valid = DIJ_reshaped_valid.reshape(-1, nparams)
-    
-    # Calculate the Hessian using matrix multiplication on valid values
-    # MFT: will H still get the correct shape in any case?
-    H = DIJ_reshaped_valid.T @ DIJ_reshaped_valid
+    DIJ_filled = np.where(np.isfinite(DIJ), DIJ, 0)
+    DIJt = np.einsum("ijlk->ijkl", DIJ_filled)
+    H = np.einsum("ijkl,ijlm->km", DIJt, DIJ_filled) # DIJ[ij,:,:].T @ DIJ[ij,:,:]
 
-    
     return H
 
 
@@ -107,14 +91,16 @@ def hessian_robust(DIJ, rho, nparams):
     ny, nx, nz, nparams = DIJ.shape[0], DIJ.shape[1], DIJ.shape[2], DIJ.shape[3]
     # Initialize the Hessian to zero
     H = np.zeros((nparams, nparams), dtype=np.float64)
-    
+    DIJ_filled = np.where(np.isfinite(DIJ), DIJ, 0)
+    DIJt = np.einsum("ijlk->ijkl", DIJ_filled)
+    H = np.einsum("ij,ijkl,ijlm->km", rho, DIJt, DIJ_filled) # rho[i, j] * DIJ[ij,:,:].T @ DIJ[ij,:,:]
     # Calculate the Hessian in a neighbor window
-    for i in range(ny):
-        for j in range(nx):
-            DIJ_slice = DIJ[i, j, :, :]
-            # H += sAtA(rho[i * nx + j], DIJ_slice, nz, nparams)
-            if utils.valid_values(DIJ_slice):
-                H += rho[i, j] * DIJ_slice.T @ DIJ_slice
+    # for i in range(ny):
+    #     for j in range(nx):
+    #         DIJ_slice = DIJ[i, j, :, :]
+    #         # H += sAtA(rho[i * nx + j], DIJ_slice, nz, nparams)
+    #         if utils.valid_values(DIJ_slice):
+    #             H += rho[i, j] * DIJ_slice.T @ DIJ_slice
     
     return H
 

@@ -14,7 +14,7 @@ import zoom as zm
 import constants as cts
 
  
-def inverse_compositional_algorithm(I1, I2, p, transform_type, nanifoutside, delta, TOL, verbose):
+def inverse_compositional_algorithm(I1, I2, p, transform_type, TOL, nanifoutside, delta, verbose):
     """
     Inverse compositional algorithm
     Quadratic version - L2 norm
@@ -23,15 +23,13 @@ def inverse_compositional_algorithm(I1, I2, p, transform_type, nanifoutside, del
     :param I2: Second image, a numpy array of shape (ny, nx, nz).
     :param p: Initial transformation parameters (may be not null if we iterate on the function call).
     :param transform_type (TransformType): The type of transformation.
+    :param TOL: Tolerance used for the convergence in the iterations.
     :param nanifoutside: If True, the pixels outside the image are considered as NaN.
     :param delta: The maximal distance to boundary to consider the pixel as NaN.
-    :param TOL: Tolerance used for the convergence in the iterations.
     :param verbose: Enable verbose mode.
     
     :return: The updated transformation parameters.
     """
-    #TODO: remove this constraint to alow the processing of grey scale images
-    #TODO: if images are colored and processing requested in grey scale, we must convert them to grey scale
     # We suppose that I1 and I2 are RGB images with channels in the last dimension, if not we raise an error
     if len(I1.shape) != 3 or len(I2.shape) != 3 or I1.shape[2] != 3 or I2.shape[2] != 3:
         raise ValueError("I1 and I2 must be RGB images with channels in the last dimension")
@@ -51,10 +49,6 @@ def inverse_compositional_algorithm(I1, I2, p, transform_type, nanifoutside, del
     if I1.dtype != np.float64 or I2.dtype != np.float64:
         I1 = I1.astype(np.float64)
         I2 = I2.astype(np.float64)
-        # As later in the code we make use of libraries like skimage that supposes all float images to be in
-        # the range [0., 1.], we must scale the images to this range
-        # I1 = rescale_intensity(I1, in_range=(0, 255), out_range=(0, 1))
-        # I2 = rescale_intensity(I2, in_range=(0, 255), out_range=(0, 1))
 
     nparams = transform_type.nparams()
 
@@ -88,32 +82,28 @@ def inverse_compositional_algorithm(I1, I2, p, transform_type, nanifoutside, del
     J = de.jacobian(transform_type, nx, ny)
     
     # Compute the steepest descent images
-    # Value range of Ix and Iy must not be in [0., 1.] as for J
     DIJ = io.steepest_descent_images(Ix, Iy, J, nparams)
-    # DIJ is flattened
     
     # Compute the Hessian matrix
-    H = de.hessian(DIJ) # H is not flattened
-    H_1 = de.inverse_hessian(H, nparams) # H_1 is not flattened
+    H = de.hessian(DIJ) 
+    H_1 = de.inverse_hessian(H, nparams) 
     
     # Iterate
     error = 1E10
     niter = 0
     
     while error > TOL and niter < cts.MAX_ITER:
-        # Warp image I2
-        # Iw = bi.bicubic_interpolation_image(I2, p, transform_type.nparams(), nanifoutside, delta) 
+        # Warp image I2 to compute I2w
         Iw = bi.bicubic_interpolation_skimage(I2, p, transform_type, nanifoutside, delta) 
         
         # Compute the error image (I1-I2w)
-        # difference_image(I1, Iw, DI, nx, ny, nz)
         DI = Iw - I1
         
         # Compute the independent vector
-        b = io.independent_vector(DIJ, DI, nparams) # b is flattened
+        b = io.independent_vector(DIJ, DI, nparams)
         
         # Solve equation and compute increment of the motion 
-        error, dp = io.parametric_solve(H_1, b, nparams) # H_1 is not flattened, b is flattened
+        error, dp = io.parametric_solve(H_1, b, nparams) 
         
         # Update the warp x'(x;p) := x'(x;p) * x'(x;dp)^-1
         p = tr.update_transform(p, dp, transform_type)
@@ -133,11 +123,11 @@ def robust_inverse_compositional_algorithm(
     I2,    # second image
     p,     # parameters of the transform (output, all in input if we iterate on the function call)
     transform_type,   # transform type
-    nanifoutside, 
-    delta, 
     TOL,    # Tolerance used for the convergence in the iterations
     robust_type, # type (RobustErrorFunctionType) of robust error function
     lambda_, # parameter of robust error function
+    nanifoutside, # if True, the pixels outside the image are considered as NaN
+    delta, # maximal distance to boundary to consider the pixel as NaN
     verbose  # enable verbose mode
 ):
     """
@@ -148,11 +138,11 @@ def robust_inverse_compositional_algorithm(
     - I2: Second image.
     - p: Initial Parameters of the transform (may be not null if we iterate on the function call).
     - transform_type (TransformType): The type of transformation.
-    - nanifoutside: If True, the pixels outside the image are considered as NaN.
-    - delta: The maximal distance to boundary to consider the pixel as NaN.
     - TOL: Tolerance used for the convergence in the iterations.
     - robust: Robust error function.
     - lambda_: Parameter of the robust error function.
+    - nanifoutside: If True, the pixels outside the image are considered as NaN.
+    - delta: The maximal distance to boundary to consider the pixel as NaN.
     - verbose: Enable verbose mode.
 
     Returns: updated parameters of the transform.
@@ -215,15 +205,13 @@ def robust_inverse_compositional_algorithm(
     lambda_it = lambda_ if lambda_ > 0 else cts.LAMBDA_0
 
     while error > TOL and niter < cts.MAX_ITER:
-        # Warp image I2
-        Iw = bi.bicubic_interpolation_image(I2, p, transform_type, nanifoutside, delta) 
+        # Warp image I2 to compute I2w
+        Iw = bi.bicubic_interpolation_skimage(I2, p, transform_type, nanifoutside, delta) 
 
         # Compute the error image (I1-I2w)
-        # difference_image(I1, Iw, DI, nx, ny, nz)
         DI = Iw - I1
 
         # Compute robustification function
-        #TODO: correct this function to work with non flat images and matrices 
         rho = io.robust_error_function(DI, lambda_it, robust_type)
 
         if lambda_ <= 0 and lambda_it > cts.LAMBDA_N:
@@ -232,11 +220,9 @@ def robust_inverse_compositional_algorithm(
                 lambda_it = cts.LAMBDA_N
 
         # Compute the independent vector
-        #TODO: correct this function to work with non flat images and matrices
         b = io.independent_vector_robust(DIJ, DI, rho, nparams)
 
         # Compute the Hessian matrix
-        #TODO: correct this function to work with non flat images and matrices
         H = de.hessian_robust(DIJ, rho, nparams)
         H_1 = de.inverse_hessian(H, nparams)
 
@@ -250,7 +236,7 @@ def robust_inverse_compositional_algorithm(
             print(f"|Dp|={error}: p=(", end="")
             for i in range(nparams - 1):
                 print(f"{p[i]} ", end="")
-            print(f"{p[nparams - 1]}), lambda={lambda_it}")
+            print(f"{p[nparams - 1]}), lambda_={lambda_it}")
 
         niter += 1
 
@@ -267,6 +253,8 @@ def pyramidal_inverse_compositional_algorithm(
     TOL,     # stopping criterion threshold
     robust_type,  # type of robust error function
     lambda_,  # parameter of robust error function
+    nanifoutside, # if True, the pixels outside the image are considered as NaN
+    delta, # maximal distance to boundary to consider the pixel as NaN
     verbose  # switch on messages
 ):
     """
@@ -305,12 +293,7 @@ def pyramidal_inverse_compositional_algorithm(
     if I1.dtype != np.float64 or I2.dtype != np.float64:
         I1 = I1.astype(np.float64)
         I2 = I2.astype(np.float64)
-        # As later in the code we make use of libraries like skimage that supposes all float images to be in
-        # the range [0., 1.], we must scale the images to this range
-        # I1 = rescale_intensity(I1, in_range=(0, 255), out_range=(0, 1))
-        # I2 = rescale_intensity(I2, in_range=(0, 255), out_range=(0, 1))
         
-    #TODO: correction all the function and subfunctions to work with non flat images and matrices
     nparams = transform_type.nparams()
     I1s = [np.zeros((nyy, nxx, nzz), dtype=np.float64)]
     I2s = [np.zeros((nyy, nxx, nzz), dtype=np.float64)]
@@ -326,11 +309,8 @@ def pyramidal_inverse_compositional_algorithm(
 
     for s in range(1, nscales):
         nx[s], ny[s] = zm.zoom_size(nx[s-1], ny[s-1], nu)
-        #TODO: replace zoom_out by skimage.transform.rescale -> done
-        # I1s[s] = zm.zoom_out(I1s[s-1], nx[s-1], ny[s-1], nzz, nu)
         I1s.append(rescale(I1s[s-1], nu, mode='constant', cval=0, order=3, #bicubic interpolation
                             anti_aliasing=True, channel_axis=2, preserve_range=True))
-        # I2s[s] = zm.zoom_out(I2s[s-1], nx[s-1], ny[s-1], nzz, nu)
         I2s.append(rescale(I2s[s-1], nu, mode='constant', cval=0, order=3, #bicubic interpolation
                             anti_aliasing=True, channel_axis=2, preserve_range=True))
         ps[s] = np.zeros(nparams, dtype=np.float64)
@@ -343,17 +323,31 @@ def pyramidal_inverse_compositional_algorithm(
             if verbose:
                 print("(L2 norm)")
             ps[s], error, DI, Iw = inverse_compositional_algorithm(
-                I1s[s], I2s[s], ps[s], transform_type, True, 10, TOL, verbose
+                I1=I1s[s], 
+                I2=I2s[s], 
+                p=ps[s], 
+                transform_type=transform_type, 
+                TOL=TOL, 
+                nanifoutside=nanifoutside, 
+                delta=delta, 
+                verbose=verbose
             )
         else:
             if verbose:
                 print(f"(Robust error function {robust_type})")
             robust_inverse_compositional_algorithm(
-                I1s[s], I2s[s], ps[s], transform_type, TOL, robust_type, lambda_, verbose
+                I1=I1s[s], 
+                I2=I2s[s], 
+                p=ps[s], 
+                transform_type=transform_type, 
+                TOL=TOL, 
+                robust_type=robust_type, 
+                lambda_=lambda_, 
+                nanifoutside=nanifoutside,
+                delta=delta,
+                verbose=verbose
             )
         if s > 0:
             ps[s-1] = zm.zoom_in_parameters(ps[s], transform_type, nx[s], ny[s], nx[s-1], ny[s-1])
-            # print("ps[%d] = ".format(s), ps[s])
-            # print("ps[%d] = ".format(s-1), ps[s-1])
 
     return ps[0], error, DI, Iw
