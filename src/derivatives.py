@@ -1,10 +1,13 @@
 import numpy as np
 from matrix_operators import AtA, sAtA
+from numba import jit
 from transformation import TransformType
 import utils
 
-
-def jacobian(transform_type, nx, ny):
+def jacobian(
+        transform_type: TransformType, 
+        nx: int, 
+        ny: int):
     """
     Compute the Jacobian matrix for a given transform type.
 
@@ -21,104 +24,75 @@ def jacobian(transform_type, nx, ny):
     """
     nparams = transform_type.nparams()
 
-    J = np.zeros((2 * nx * ny * nparams), dtype=np.float64)
+    J = np.zeros((ny, nx, 2 * nparams), dtype=np.float64)
+
+    y, x = np.mgrid[0:ny, 0:nx]
 
     match transform_type:
         case TransformType.TRANSLATION:
-            for i in range(nx * ny):
-                c = 2 * i * nparams
-                J[c] = 1.0
-                J[c + 1] = 0.0
-                J[c + 2] = 0.0
-                J[c + 3] = 1.0
+            J[:, :, 0] = 1.0
+            J[:, :, 3] = 1.0
 
         case TransformType.EUCLIDEAN:
-            for i in range(ny):
-                for j in range(nx):
-                    c = 2 * (i * nx + j) * nparams
-                    J[c] = 1.0
-                    J[c + 1] = 0.0
-                    J[c + 2] = -i
-                    J[c + 3] = 0.0
-                    J[c + 4] = 1.0
-                    J[c + 5] = j
+            J[:, :, 0] = 1.0
+            J[:, :, 2] = -y
+            J[:, :, 4] = 1.0
+            J[:, :, 5] = x
 
         case TransformType.SIMILARITY:
-            for i in range(ny):
-                for j in range(nx):
-                    c = 2 * (i * nx + j) * nparams
-                    J[c] = 1.0
-                    J[c + 1] = 0.0
-                    J[c + 2] = j
-                    J[c + 3] = -i
-                    J[c + 4] = 0.0
-                    J[c + 5] = 1.0
-                    J[c + 6] = i
-                    J[c + 7] = j
+            J[:, :, 0] = 1.0
+            J[:, :, 2] = x
+            J[:, :, 3] = -y
+            J[:, :, 5] = 1.0
+            J[:, :, 6] = y
+            J[:, :, 7] = x
 
         case TransformType.AFFINITY:
-            for i in range(ny):
-                for j in range(nx):
-                    c = 2 * (i * nx + j) * nparams
-                    J[c] = 1.0
-                    J[c + 1] = 0.0
-                    J[c + 2] = j
-                    J[c + 3] = i
-                    J[c + 4] = 0.0
-                    J[c + 5] = 0.0
-                    J[c + 6] = 0.0
-                    J[c + 7] = 1.0
-                    J[c + 8] = 0.0
-                    J[c + 9] = 0.0
-                    J[c + 10] = j
-                    J[c + 11] = i
+            J[:, :, 0] = 1.0
+            J[:, :, 2] = x
+            J[:, :, 3] = y
+            J[:, :, 7] = 1.0
+            J[:, :, 10] = x
+            J[:, :, 11] = y
 
         case TransformType.HOMOGRAPHY:
-            for i in range(ny):
-                for j in range(nx):
-                    c = 2 * (i * nx + j) * nparams
-                    J[c] = j
-                    J[c + 1] = i
-                    J[c + 2] = 1.0
-                    J[c + 3] = 0.0
-                    J[c + 4] = 0.0
-                    J[c + 5] = 0.0
-                    J[c + 6] = -j * j
-                    J[c + 7] = -j * i
-                    J[c + 8] = 0.0
-                    J[c + 9] = 0.0
-                    J[c + 10] = 0.0
-                    J[c + 11] = j
-                    J[c + 12] = i
-                    J[c + 13] = 1.0
-                    J[c + 14] = -j * i
-                    J[c + 15] = -i * i
-
-    J = J.reshape((ny, nx, 2 * nparams))
+            J[:, :, 0] = x
+            J[:, :, 1] = y
+            J[:, :, 2] = 1.0
+            J[:, :, 6] = -x * x
+            J[:, :, 7] = -x * y
+            J[:, :, 11] = x
+            J[:, :, 12] = y
+            J[:, :, 13] = 1.0
+            J[:, :, 14] = -x * y
+            J[:, :, 15] = -y * y
 
     return J
 
-    
-def hessian(DIJ):
+
+def hessian(
+        DIJ: np.ndarray
+        ) -> np.ndarray:
     """
     Function to compute the Hessian matrix.
     The Hessian is equal to DIJ^T * DIJ.
     """
     ny, nx, nz, nparams = DIJ.shape[0], DIJ.shape[1], DIJ.shape[2], DIJ.shape[3]
-    # Initialize the Hessian to zero
+    
     H = np.zeros((nparams, nparams), dtype=np.float64)
-    
-    # Calculate the Hessian in a neighbor window
-    for i in range(ny):
-        for j in range(nx):
-            # DIJ_slice = DIJ[(i * nx + j) * nz * nparams : (i * nx + j + 1) * nz * nparams]
-            DIJ_slice = DIJ[i, j, :, :]
-            if utils.valid_values(DIJ_slice):
-                H += DIJ_slice.T @ DIJ_slice
-    
+
+    DIJ_filled = np.where(np.isfinite(DIJ), DIJ, 0)
+    DIJt = np.einsum("ijlk->ijkl", DIJ_filled)
+    H = np.einsum("ijkl,ijlm->km", DIJt, DIJ_filled) # DIJ[ij,:,:].T @ DIJ[ij,:,:]
+
     return H
 
-def hessian_robust(DIJ, rho, nparams):
+
+def hessian_robust(
+        DIJ: np.ndarray, 
+        rho: np.ndarray, 
+        nparams: int
+        ) -> np.ndarray:
     """
     Function to compute the Hessian matrix with robust error functions.
     The Hessian is equal to rho' * DIJ^T * DIJ.
@@ -126,19 +100,17 @@ def hessian_robust(DIJ, rho, nparams):
     ny, nx, nz, nparams = DIJ.shape[0], DIJ.shape[1], DIJ.shape[2], DIJ.shape[3]
     # Initialize the Hessian to zero
     H = np.zeros((nparams, nparams), dtype=np.float64)
-    
-    # Calculate the Hessian in a neighbor window
-    for i in range(ny):
-        for j in range(nx):
-            DIJ_slice = DIJ[i, j, :, :]
-            # H += sAtA(rho[i * nx + j], DIJ_slice, nz, nparams)
-            if utils.valid_values(DIJ_slice):
-                H += rho[i, j] * DIJ_slice.T @ DIJ_slice
+    DIJ_filled = np.where(np.isfinite(DIJ), DIJ, 0)
+    DIJt = np.einsum("ijlk->ijkl", DIJ_filled)
+    H = np.einsum("ij,ijkl,ijlm->km", rho, DIJt, DIJ_filled) # rho[i, j] * DIJ[ij,:,:].T @ DIJ[ij,:,:]
     
     return H
 
 
-def inverse_hessian(H, nparams):
+def inverse_hessian(
+        H: np.ndarray, 
+        nparams: int
+        ) -> np.ndarray:
     """
     Function to compute the inverse of the Hessian
 

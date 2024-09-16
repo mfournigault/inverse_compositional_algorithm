@@ -1,6 +1,10 @@
 import numpy as np
+from numba import jit, prange
+from skimage import transform
+
 import transformation as tf
 
+@jit(nopython=True, fastmath=True, nogil=True, cache=True, parallel=True)
 def neumann_bc(x: int, nx: int) -> tuple[int, bool]:
     """
     Apply Neumann boundary conditions to the given value.
@@ -19,6 +23,7 @@ def neumann_bc(x: int, nx: int) -> tuple[int, bool]:
     return x
 
 
+@jit(nopython=True, fastmath=True, nogil=True, cache=True, parallel=True)
 def cubic_interpolation(v: np.ndarray, x: float) -> float:
     """
     Performs cubic interpolation using the given control points and the interpolation parameter.
@@ -36,6 +41,7 @@ def cubic_interpolation(v: np.ndarray, x: float) -> float:
                                     + x * (3.0 * (v[1] - v[2]) + v[3] - v[0])))
 
 
+@jit(nopython=True, fastmath=True, nogil=True, cache=True, parallel=True)
 def bicubic_interpolation_array(p, x, y):
     """
     Bicubic interpolation in two dimensions.
@@ -56,6 +62,7 @@ def bicubic_interpolation_array(p, x, y):
     return cubic_interpolation(v, x)
 
 
+@jit(nopython=True, fastmath=True, nogil=True, cache=True, parallel=True)
 def bicubic_interpolation_point(input, uu, vv, nx, ny, nz, k):
     """
     Performs bicubic interpolation at a given point.
@@ -110,28 +117,30 @@ def bicubic_interpolation_point(input, uu, vv, nx, ny, nz, k):
     
     return bicubic_interpolation_array(pol, uu - x, vv - y)
 
-
+@jit(nopython=True, fastmath=True, nogil=True, cache=True, parallel=True)
 def bicubic_interpolation_image(
     input, 
-    params, 
-    transform_type, 
+    params,
+    nparams,
+    # transform_type, 
     nanifoutside, 
     delta):
     
     ny, nx, nz = input.shape
     output = np.zeros((ny, nx, nz), dtype=np.float64)
 
-    nparams = transform_type.nparams()
+    # nparams = transform_type.nparams()
 
     if nanifoutside:
         out_value = np.nan
     else:
         out_value = 0.0
     
-    for i in range(ny):
-        for j in range(nx):
+    for i in prange(ny):
+        for j in prange(nx):
             p = i * nx + j
-            x, y = tf.project(j, i, params, transform_type)
+            # x, y = tf.project(j, i, params, transform_type)
+            x, y = tf.project(j, i, params, nparams)
             out = (x < delta) or (x > nx - 1 - delta) or (y < delta) or (y > ny - 1 - delta)
 
             if out:
@@ -142,4 +151,57 @@ def bicubic_interpolation_image(
     
     return output
 
+def bicubic_interpolation_skimage(
+        image: np.ndarray, 
+        params: np.ndarray, 
+        transformation_type: tf.TransformType, 
+        nanifoutside: bool, 
+        delta: int) -> np.ndarray:
+    """
+    Perform bicubic interpolation on the input image.
+
+    Args:
+        image (ndarray): The input image to interpolate.
+        transformation_type (TransformationType): The type of the transformation.
+        params (ndarray): The parameters of the transformation.
+        nanifoutside (bool): If True, set the value of pixels outside the image to NaN. If False, set the value to 0.0.
+        delta (int): A small value to avoid interpolation near the image borders.
+
+    Returns:
+        ndarray: The interpolated image.
+    """
+    if all(np.abs(value) < 1e-10 for value in params):
+        # Identity transformation
+        tform = transform.AffineTransform(matrix=np.eye(3))
+    else:
+        hmatrix = tf.params2matrix(params, transformation_type)
+        if transformation_type == tf.TransformType.AFFINITY:
+            tform = transform.AffineTransform(matrix=hmatrix)
+        elif transformation_type == tf.TransformType.SIMILARITY:
+            # Similarity transformation, we expect gt as [tx, ty, a, b]
+            # skimage considers the rotation in clockwise direction, so we need to negate it
+            # tform = transform.SimilarityTransform(scale=gt[2], rotation=gt[3], translation=(gt[0], gt[1]))
+            tform = transform.SimilarityTransform(matrix=hmatrix)
+        elif transformation_type == tf.TransformType.TRANSLATION:
+            # Euclidean transformation, we expect gt as [tx, ty]
+            # skimage considers the rotation in clockwise direction, so we need to negate it
+            tform = transform.EuclideanTransform(translation=(params[0], params[1]))
+        elif transformation_type == tf.TransformType.EUCLIDEAN:
+            # Euclidean transformation, we expect gt as [tx, ty, theta]
+            # skimage considers the rotation in clockwise direction, so we need to negate it
+            tform = transform.EuclideanTransform(rotation=params[2], translation=(params[0], params[1]))
+            # tform = transform.EuclideanTransform(matrix=hmatrix)
+        elif transformation_type == tf.TransformType.HOMOGRAPHY:
+            tform = transform.ProjectiveTransform(matrix=hmatrix)
+        else:
+            raise ValueError("Unsupported transformation type")
+
+    transformed = transform.warp(image, tform, order=3, mode="constant", cval=np.nan, preserve_range=True) # bi-cubic order of interpolation
+    # if (nanifoutside is True and delta > 0):
+    #     transformed[:delta, :, :] = np.nan
+    #     transformed[-delta:, :, :] = np.nan
+    #     transformed[:, :delta, :] = np.nan
+    #     transformed[:, -delta:, :] = np.nan
+    
+    return transformed
 

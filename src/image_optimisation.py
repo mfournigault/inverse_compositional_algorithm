@@ -1,5 +1,7 @@
 import numpy as np
 from enum import Enum
+from numba import jit
+
 from matrix_operators import AtA, sAtA, Atb, sAtb
 import utils
 
@@ -12,12 +14,16 @@ class RobustErrorFunctionType(Enum):
     LORENTZIAN = 3
     CHARBONNIER = 4
 
-def rhop(t2, lambda_, type_):
+def rhop(
+        t2: np.ndarray, 
+        lambda_: float, 
+        type_: RobustErrorFunctionType
+        ) -> np.ndarray:
     """
     Derivative of robust error functions
 
     Parameters:
-    t2 (float): squared difference of both images  
+    t2 (float): squared difference of both images, now a mtrix  
     lambda_ (float): robust threshold
     type_ (int): choice of the robust error function
 
@@ -27,26 +33,31 @@ def rhop(t2, lambda_, type_):
     lambda2 = lambda_ * lambda_
     result = 0.0
 
-    if type_ == RobustErrorFunctionType.QUADRATIC:
-        result = 1.0
-    elif type_ == RobustErrorFunctionType.TRUNCATED_QUADRATIC:
-        if t2 < lambda2:
-            result = 1.0
-        else:
-            result = 0.0
-    elif type_ == RobustErrorFunctionType.GERMAN_MCCLURE:
-        result = lambda2 / ((lambda2 + t2) * (lambda2 + t2))
-    elif type_ == RobustErrorFunctionType.LORENTZIAN:
-        result = 1.0 / (lambda2 + t2)
-    elif type_ == RobustErrorFunctionType.CHARBONNIER:
-        result = 1.0 / np.sqrt(t2 + lambda2)
-    else:
-        raise ValueError("Unknown type for robust error function")
+    match type_:
+        case RobustErrorFunctionType.QUADRATIC:
+            result = np.ones_like(t2)
+        case RobustErrorFunctionType.TRUNCATED_QUADRATIC:
+            if t2 < lambda2:
+                result = np.ones_like(t2)
+            else:
+                result = np.zeros_like(t2)
+        case RobustErrorFunctionType.GERMAN_MCCLURE:
+            result = lambda2 / ((lambda2 + t2) * (lambda2 + t2))
+        case RobustErrorFunctionType.LORENTZIAN:
+            result = 1.0 / (lambda2 + t2)
+        case RobustErrorFunctionType.CHARBONNIER:
+            result = 1.0 / np.sqrt(t2 + lambda2)
+        case _:
+            raise ValueError("Unknown type for robust error function")
 
     return result
 
 
-def robust_error_function(DI, lambda_, type_):
+def robust_error_function(
+        DI: np.ndarray, 
+        lambda_: float, 
+        type_: RobustErrorFunctionType
+        ) -> np.ndarray:
     """
     Function to store the values of p'((I2(x'(x;p))-I1(x))²)
 
@@ -58,40 +69,21 @@ def robust_error_function(DI, lambda_, type_):
     Returns:
     numpy.ndarray: output robust function array
     """
-
-   #TODO: remove params nx, ny, nz and define them from the shape of DI
-    
-    ny, nx, nz = DI.shape # suppose that DI is not flattened
+    ny, nx, nz = DI.shape 
     rho = np.zeros((ny, nx), dtype=np.float64)
-
-    for i in range(ny):
-        for j in range(nx):
-            if utils.valid_values(DI[i, j, :]):
-                norm = 0.0
-                for c in range(nz):
-                    norm += DI[i, j, c] * DI[i, j, c]
-                rho[i, j] = rhop(norm, lambda_, type_)
-            else:
-                rho[i, j] = 0.0
-    
-    # code for time optimization
-    # Créer un masque pour les valeurs valides
-    # valid_mask = np.apply_along_axis(utils.valid_values, 2, DI)
-
-    # # Calculer la norme pour les valeurs valides
-    # norms = np.linalg.norm(DI, axis=2)
-
-    # # Appliquer la fonction rhop uniquement aux valeurs valides
-    # rho[valid_mask] = rhop(norms[valid_mask], lambda_, type_)
-
-    # # Mettre à zéro les valeurs non valides
-    # rho[~valid_mask] = 0.0
+    rho = np.where(np.isfinite(DI), DI, 0.0)
+    # rho = np.linalg.norm(rho, ord=2, axis=2) # in the original code, it is not strictly a norm of order 2, as they keep the square of the norm
+    rho = np.einsum("ijc,ijc->ij", rho, rho)
+    rho = np.where(np.isfinite(rho), rhop(rho, lambda_, type_), 0.0)
 
     return rho
 
 
-
-def independent_vector(DIJ, DI, nparams):
+def independent_vector(
+        DIJ:np.ndarray, 
+        DI: np.ndarray, 
+        nparams: int
+        ) -> np.ndarray:
     """
     Function to compute b=Sum(DIJ^t * DI)
 
@@ -106,28 +98,24 @@ def independent_vector(DIJ, DI, nparams):
     ny, nx, nz = DI.shape # suppose that DI is not flattened
     b = np.zeros(nparams, dtype=np.float64)
 
-    for i in range(ny):
-        for j in range(nx):
-            # DIJ, DI are supposed to not be flattened
-            # b += Atb(
-            #     DIJ[(i * nx + j) * nparams * nz : (i * nx + j + 1) * nparams * nz],
-            #     DI[(i * nx + j) * nz : (i * nx + j + 1) * nz],
-            #     nz, nparams
-            # )
-            try:
-                # b += np.dot(DIJ[i, j, :, :].T, DI[i, j, :])
-                if utils.valid_values(DIJ[i, j, :, :]) and utils.valid_values(DI[i, j, :]):
-                    b += DIJ[i, j, :, :].T @ DI[i, j, :]
+    # Create masked arrays with NaN values masked
+    DIJ_filled = np.where(np.isfinite(DIJ), DIJ, 0)
+    DI_filled = np.where(np.isfinite(DI), DI, 0)
 
-            except IndexError:
-                print(f"IndexError: i={i}, j={j}, DIJ.shape={DIJ.shape}, DI.shape={DI.shape}")
-                raise
-            # b is flattened
+    # Vectorized computation using einsum for efficiency
+    DIJt = np.einsum("ijlk->ijkl", DIJ_filled)
+    prod = np.einsum("ijkl,ijl->ijk", DIJt, DI_filled)
+    b = np.einsum("ijl->l", prod)
 
     return b
 
 
-def independent_vector_robust(DIJ, DI, rho, nparams):
+def independent_vector_robust(
+        DIJ: np.ndarray, 
+        DI: np.ndarray, 
+        rho: np.ndarray, 
+        nparams: int
+        ) -> np.ndarray:
     """
     Function to compute b=Sum(rho'*DIJ^t * DI) with robust error functions
 
@@ -145,32 +133,22 @@ def independent_vector_robust(DIJ, DI, rho, nparams):
     ny, nx, nz = DI.shape # suppose that DI is not flattened
     b = np.zeros(nparams, dtype=np.float64)
 
-    for i in range(ny):
-        for j in range(nx):
-            # b += sAtb(
-            #     rho[i * nx + j], 
-            #     DIJ[(i * nx + j) * nparams * nz : (i * nx + j + 1) * nparams * nz],
-            #     DI[(i * nx + j) * nz : (i * nx + j + 1) * nz],
-            #     nz, nparams
-            # )
-            try:
-                if utils.valid_values(DIJ[i, j, :, :]) and utils.valid_values(DI[i, j, :]):
-                    b += rho[i, j] * DIJ[i, j, :, :].T @ DI[i, j, :]
+    DIJ_filled = np.where(np.isfinite(DIJ), DIJ, 0)
+    DI_filled = np.where(np.isfinite(DI), DI, 0)
 
-            except IndexError:
-                print(f"IndexError: i={i}, j={j}, DIJ.shape={DIJ.shape}, DI.shape={DI.shape}")
-                raise
+    # Vectorized computation using einsum for efficiency
+    DIJt = np.einsum("ijlk->ijkl", DIJ_filled)
+    prod = np.einsum("ijkl,ijl->ijk", DIJt, DI_filled)
+    prod = np.einsum("ij,ijk->ijk", rho, prod)
+    b = np.einsum("ijl->l", prod)
 
     return b
 
 
-def parametric_solve(H_1, b, nparams):
-    # Convert inputs to numpy arrays
-    # H_1 = np.array(H_1).reshape((nparams, nparams))
-    b = np.array(b, dtype=np.float64)
-    
-    # Perform matrix-vector multiplication
-    # dp = np.dot(H_1, b)
+def parametric_solve(
+        H_1: np.ndarray, 
+        b: np.ndarray, 
+        nparams: int) -> (float, float):
     dp = H_1 @ b
     
     # Calculate the error
@@ -179,7 +157,13 @@ def parametric_solve(H_1, b, nparams):
     return np.sqrt(error), dp
 
 
-def steepest_descent_images(Ix, Iy, J, nparams):
+@jit(nopython=True, fastmath=True, nogil=True, cache=True, parallel=True)
+def steepest_descent_images(
+        Ix: np.ndarray, 
+        Iy: np.ndarray, 
+        J: np.ndarray, 
+        nparams: int
+        ) -> np.ndarray:
     """
     Calculate the steepest descent images DI^t*J for optimization.
 
@@ -204,11 +188,9 @@ def steepest_descent_images(Ix, Iy, J, nparams):
     # Initialize the output array
     DIJ = np.zeros((ny, nx, nz, nparams), dtype=np.float64)
     
-    for i in range(ny):
-        for j in range(nx):
-            for c in range(nz):
-                for n in range(nparams):
-                    # DIJ[k++]=Ix[p*nz+c]*J[2*p*nparams+n]+Iy[p*nz+c]*J[2*p*nparams+n+nparams];
-                    DIJ[i, j, c, n] = Ix[i, j, c] * J[i, j, n] + Iy[i, j, c] * J[i, j, n + nparams]
+    # Vectorized computation
+    for c in range(nz):
+        for n in range(nparams):
+            DIJ[:, :, c, n] = Ix[:, :, c] * J[:, :, n] + Iy[:, :, c] * J[:, :, n + nparams]
     
     return DIJ
