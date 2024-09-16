@@ -151,7 +151,12 @@ def bicubic_interpolation_image(
     
     return output
 
-def bicubic_interpolation_skimage(image, params, transformation_type, nanifoutside, delta):
+def bicubic_interpolation_skimage(
+        image: np.ndarray, 
+        params: np.ndarray, 
+        transformation_type: tf.TransformType, 
+        nanifoutside: bool, 
+        delta: int) -> np.ndarray:
     """
     Perform bicubic interpolation on the input image.
 

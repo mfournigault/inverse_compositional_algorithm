@@ -14,21 +14,35 @@ import zoom as zm
 import constants as cts
 
  
-def inverse_compositional_algorithm(I1, I2, p, transform_type, TOL, nanifoutside, delta, verbose):
+def inverse_compositional_algorithm(
+        I1: np.ndarray, 
+        I2: np.ndarray, 
+        p: np.ndarray, 
+        transform_type: tr.TransformType, 
+        TOL: float, 
+        nanifoutside: bool, 
+        delta: int, 
+        verbose: bool
+        ) -> (np.ndarray, float, np.ndarray, np.ndarray):
     """
     Inverse compositional algorithm
     Quadratic version - L2 norm
 
-    :param I1: First image, a numpy array of shape (ny, nx, nz).
-    :param I2: Second image, a numpy array of shape (ny, nx, nz).
-    :param p: Initial transformation parameters (may be not null if we iterate on the function call).
-    :param transform_type (TransformType): The type of transformation.
-    :param TOL: Tolerance used for the convergence in the iterations.
-    :param nanifoutside: If True, the pixels outside the image are considered as NaN.
-    :param delta: The maximal distance to boundary to consider the pixel as NaN.
-    :param verbose: Enable verbose mode.
-    
-    :return: The updated transformation parameters.
+    Parameters:
+    - I1: First image.
+    - I2: Second image.
+    - p: Initial Parameters of the transform (may be not null if we iterate on the function call).
+    - transform_type (TransformType): The type of transformation.
+    - TOL: Tolerance used for the convergence in the iterations.
+    - nanifoutside: If True, the pixels outside the image are considered as NaN.
+    - delta: The maximal distance to boundary to consider the pixel as NaN.
+    - verbose: Enable verbose mode.
+
+    Returns: 
+    - p:updated parameters of the transform,
+    - error: error value,
+    - DI: error image,
+    - Iw: warped image.
     """
     # We suppose that I1 and I2 are RGB images with channels in the last dimension, if not we raise an error
     if len(I1.shape) != 3 or len(I2.shape) != 3 or I1.shape[2] != 3 or I2.shape[2] != 3:
@@ -119,17 +133,17 @@ def inverse_compositional_algorithm(I1, I2, p, transform_type, TOL, nanifoutside
     return p, error, DI, Iw
 
 def robust_inverse_compositional_algorithm(
-    I1,    # first image
-    I2,    # second image
-    p,     # parameters of the transform (output, all in input if we iterate on the function call)
-    transform_type,   # transform type
-    TOL,    # Tolerance used for the convergence in the iterations
-    robust_type, # type (RobustErrorFunctionType) of robust error function
-    lambda_, # parameter of robust error function
-    nanifoutside, # if True, the pixels outside the image are considered as NaN
-    delta, # maximal distance to boundary to consider the pixel as NaN
-    verbose  # enable verbose mode
-):
+    I1: np.ndarray,    # first image
+    I2: np.ndarray,    # second image
+    p: np.ndarray,     # parameters of the transform (output, all in input if we iterate on the function call)
+    transform_type: tr.TransformType,   # transform type
+    TOL: float,    # Tolerance used for the convergence in the iterations
+    robust_type: io.RobustErrorFunctionType, # type (RobustErrorFunctionType) of robust error function
+    lambda_: float, # parameter of robust error function
+    nanifoutside: bool, # if True, the pixels outside the image are considered as NaN
+    delta: int, # maximal distance to boundary to consider the pixel as NaN
+    verbose: bool  # enable verbose mode
+    ) -> (np.ndarray, float, np.ndarray, np.ndarray):
     """
     Robust Inverse Compositional Algorithm for image alignment.
 
@@ -145,7 +159,11 @@ def robust_inverse_compositional_algorithm(
     - delta: The maximal distance to boundary to consider the pixel as NaN.
     - verbose: Enable verbose mode.
 
-    Returns: updated parameters of the transform.
+    Returns: 
+    - p:updated parameters of the transform,
+    - error: error value,
+    - DI: error image,
+    - Iw: warped image.
     """
     # Define nx, ny, nz from the shape of I1 and I2
     ny, nx, nz = I1.shape
@@ -244,36 +262,39 @@ def robust_inverse_compositional_algorithm(
  
 
 def pyramidal_inverse_compositional_algorithm(
-    I1,     # first image
-    I2,     # second image
-    p,      # parameters of the transform
-    transform_type, # typeof transformation
-    nscales, # number of scales
-    nu,      # downsampling factor
-    TOL,     # stopping criterion threshold
-    robust_type,  # type of robust error function
-    lambda_,  # parameter of robust error function
-    nanifoutside, # if True, the pixels outside the image are considered as NaN
-    delta, # maximal distance to boundary to consider the pixel as NaN
-    verbose  # switch on messages
-):
+    I1: np.ndarray,     # first image
+    I2: np.ndarray,     # second image
+    p: np.ndarray,      # parameters of the transform
+    transform_type: tr.TransformType, # typeof transformation
+    nscales: int, # number of scales
+    nu: float,      # downsampling factor
+    TOL: float,     # stopping criterion threshold
+    robust_type: io.RobustErrorFunctionType,  # type of robust error function
+    lambda_: float,  # parameter of robust error function
+    nanifoutside: bool, # if True, the pixels outside the image are considered as NaN
+    delta: int, # maximal distance to boundary to consider the pixel as NaN
+    verbose: bool  # switch on messages
+    ) -> (np.ndarray, float, np.ndarray, np.ndarray):
     """
     Performs the pyramidal inverse compositional algorithm for image alignment.
 
     Args:
-        I1: First image.
-        I2: Second image.
-        p: Parameters of the transform.
-        transform_type: type of transformation to recover.
-        nscales: Number of scales.
-        nu: Downsampling factor.
-        TOL: Stopping criterion threshold.
-        robust_type: type of Robust error function.
-        lambda_: Parameter of robust error function.
-        verbose: Switch on messages.
+    - I1: First image.
+    - I2: Second image.
+    - p: Parameters of the transform.
+    - transform_type: type of transformation to recover.
+    - nscales: Number of scales.
+    - nu: Downsampling factor.
+    - TOL: Stopping criterion threshold.
+    - robust_type: type of Robust error function.
+    - lambda_: Parameter of robust error function.
+    - verbose: Switch on messages.
 
     Returns:
-        Updated parameters of the transform.
+    - p:updated parameters of the transform,
+    - error: error value,
+    - DI: error image,
+    - Iw: warped image.
     """
     # We suppose that I1 and I2 are RGB images with channels in the last dimension, if not we raise an error
     if len(I1.shape) != 3 or len(I2.shape) != 3 or I1.shape[2] != 3 or I2.shape[2] != 3:

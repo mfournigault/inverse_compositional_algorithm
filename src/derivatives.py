@@ -4,7 +4,10 @@ from numba import jit
 from transformation import TransformType
 import utils
 
-def jacobian(transform_type, nx, ny):
+def jacobian(
+        transform_type: TransformType, 
+        nx: int, 
+        ny: int):
     """
     Compute the Jacobian matrix for a given transform type.
 
@@ -67,7 +70,9 @@ def jacobian(transform_type, nx, ny):
     return J
 
 
-def hessian(DIJ):
+def hessian(
+        DIJ: np.ndarray
+        ) -> np.ndarray:
     """
     Function to compute the Hessian matrix.
     The Hessian is equal to DIJ^T * DIJ.
@@ -83,7 +88,11 @@ def hessian(DIJ):
     return H
 
 
-def hessian_robust(DIJ, rho, nparams):
+def hessian_robust(
+        DIJ: np.ndarray, 
+        rho: np.ndarray, 
+        nparams: int
+        ) -> np.ndarray:
     """
     Function to compute the Hessian matrix with robust error functions.
     The Hessian is equal to rho' * DIJ^T * DIJ.
@@ -94,18 +103,14 @@ def hessian_robust(DIJ, rho, nparams):
     DIJ_filled = np.where(np.isfinite(DIJ), DIJ, 0)
     DIJt = np.einsum("ijlk->ijkl", DIJ_filled)
     H = np.einsum("ij,ijkl,ijlm->km", rho, DIJt, DIJ_filled) # rho[i, j] * DIJ[ij,:,:].T @ DIJ[ij,:,:]
-    # Calculate the Hessian in a neighbor window
-    # for i in range(ny):
-    #     for j in range(nx):
-    #         DIJ_slice = DIJ[i, j, :, :]
-    #         # H += sAtA(rho[i * nx + j], DIJ_slice, nz, nparams)
-    #         if utils.valid_values(DIJ_slice):
-    #             H += rho[i, j] * DIJ_slice.T @ DIJ_slice
     
     return H
 
 
-def inverse_hessian(H, nparams):
+def inverse_hessian(
+        H: np.ndarray, 
+        nparams: int
+        ) -> np.ndarray:
     """
     Function to compute the inverse of the Hessian
 

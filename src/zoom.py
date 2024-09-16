@@ -59,7 +59,14 @@ def zoom_out(I: np.ndarray, factor: float) -> np.ndarray:
 
     return Iout
 
-def zoom_in_parameters(p: np.ndarray, transformation_type: TransformType, nx: int, ny: int, nxx: int, nyy: int) -> np.ndarray:
+def zoom_in_parameters(
+        p: np.ndarray, 
+        transformation_type: TransformType, 
+        nx: int, 
+        ny: int, 
+        nxx: int, 
+        nyy: int
+        ) -> np.ndarray:
     """
     Upsamples the parameters of the transformation.
 

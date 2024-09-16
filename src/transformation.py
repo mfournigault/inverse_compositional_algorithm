@@ -33,7 +33,10 @@ class TransformType(Enum):
 
 
 @jit(nopython=True, fastmath=True, nogil=True, cache=True, parallel=True)
-def update_transform(p, dp, transform_type):
+def update_transform(
+        p: np.ndarray, 
+        dp: np.ndarray, 
+        transform_type: TransformType) -> np.ndarray:
     """
     Update the transformation parameters based on the given type of transformation.
     Args:

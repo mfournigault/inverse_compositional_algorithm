@@ -14,7 +14,11 @@ class RobustErrorFunctionType(Enum):
     LORENTZIAN = 3
     CHARBONNIER = 4
 
-def rhop(t2, lambda_, type_):
+def rhop(
+        t2: np.ndarray, 
+        lambda_: float, 
+        type_: RobustErrorFunctionType
+        ) -> np.ndarray:
     """
     Derivative of robust error functions
 
@@ -49,7 +53,11 @@ def rhop(t2, lambda_, type_):
     return result
 
 
-def robust_error_function(DI, lambda_, type_):
+def robust_error_function(
+        DI: np.ndarray, 
+        lambda_: float, 
+        type_: RobustErrorFunctionType
+        ) -> np.ndarray:
     """
     Function to store the values of p'((I2(x'(x;p))-I1(x))²)
 
@@ -68,20 +76,14 @@ def robust_error_function(DI, lambda_, type_):
     rho = np.einsum("ijc,ijc->ij", rho, rho)
     rho = np.where(np.isfinite(rho), rhop(rho, lambda_, type_), 0.0)
 
-    # for i in range(ny):
-    #     for j in range(nx):
-    #         if utils.valid_values(DI[i, j, :]):
-    #             norm = 0.0
-    #             for c in range(nz):
-    #                 norm += DI[i, j, c] * DI[i, j, c]
-    #             rho[i, j] = rhop(norm, lambda_, type_)
-    #         else:
-    #             rho[i, j] = 0.0
-    
     return rho
 
 
-def independent_vector(DIJ, DI, nparams):
+def independent_vector(
+        DIJ:np.ndarray, 
+        DI: np.ndarray, 
+        nparams: int
+        ) -> np.ndarray:
     """
     Function to compute b=Sum(DIJ^t * DI)
 
@@ -97,13 +99,6 @@ def independent_vector(DIJ, DI, nparams):
     b = np.zeros(nparams, dtype=np.float64)
 
     # Create masked arrays with NaN values masked
-    # DIJ_masked = np.ma.masked_where(~np.isfinite(DIJ), DIJ)
-    # DI_masked = np.ma.masked_where(~np.isfinite(DI), DI)
-
-    # # Fill masked values with zeros
-    # DIJ_filled = DIJ_masked.filled(0)
-    # DI_filled = DI_masked.filled(0)
-
     DIJ_filled = np.where(np.isfinite(DIJ), DIJ, 0)
     DI_filled = np.where(np.isfinite(DI), DI, 0)
 
@@ -112,14 +107,15 @@ def independent_vector(DIJ, DI, nparams):
     prod = np.einsum("ijkl,ijl->ijk", DIJt, DI_filled)
     b = np.einsum("ijl->l", prod)
 
-    # Convert the masked array b to a regular NumPy array
-    # b_unmasked = b.filled(0)
-    # print("b shape: ", b_unmasked.shape)
-
     return b
 
 
-def independent_vector_robust(DIJ, DI, rho, nparams):
+def independent_vector_robust(
+        DIJ: np.ndarray, 
+        DI: np.ndarray, 
+        rho: np.ndarray, 
+        nparams: int
+        ) -> np.ndarray:
     """
     Function to compute b=Sum(rho'*DIJ^t * DI) with robust error functions
 
@@ -145,26 +141,14 @@ def independent_vector_robust(DIJ, DI, rho, nparams):
     prod = np.einsum("ijkl,ijl->ijk", DIJt, DI_filled)
     prod = np.einsum("ij,ijk->ijk", rho, prod)
     b = np.einsum("ijl->l", prod)
-    # for i in range(ny):
-    #     for j in range(nx):
-    #         try:
-    #             if utils.valid_values(DIJ[i, j, :, :]) and utils.valid_values(DI[i, j, :]):
-    #                 b += rho[i, j] * DIJ[i, j, :, :].T @ DI[i, j, :]
-
-    #         except IndexError:
-    #             print(f"IndexError: i={i}, j={j}, DIJ.shape={DIJ.shape}, DI.shape={DI.shape}")
-    #             raise
 
     return b
 
 
-def parametric_solve(H_1, b, nparams):
-    # Convert inputs to numpy arrays
-    # H_1 = np.array(H_1).reshape((nparams, nparams))
-    # b = np.array(b, dtype=np.float64)
-    
-    # Perform matrix-vector multiplication
-    # dp = np.dot(H_1, b)
+def parametric_solve(
+        H_1: np.ndarray, 
+        b: np.ndarray, 
+        nparams: int) -> (float, float):
     dp = H_1 @ b
     
     # Calculate the error
@@ -174,7 +158,12 @@ def parametric_solve(H_1, b, nparams):
 
 
 @jit(nopython=True, fastmath=True, nogil=True, cache=True, parallel=True)
-def steepest_descent_images(Ix, Iy, J, nparams):
+def steepest_descent_images(
+        Ix: np.ndarray, 
+        Iy: np.ndarray, 
+        J: np.ndarray, 
+        nparams: int
+        ) -> np.ndarray:
     """
     Calculate the steepest descent images DI^t*J for optimization.
 
