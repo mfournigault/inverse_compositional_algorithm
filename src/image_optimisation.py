@@ -64,7 +64,8 @@ def robust_error_function(DI, lambda_, type_):
     ny, nx, nz = DI.shape 
     rho = np.zeros((ny, nx), dtype=np.float64)
     rho = np.where(np.isfinite(DI), DI, 0.0)
-    rho = np.linalg.norm(rho, ord=2, axis=2)
+    # rho = np.linalg.norm(rho, ord=2, axis=2) # in the original code, it is not strictly a norm of order 2, as they keep the square of the norm
+    rho = np.einsum("ijc,ijc->ij", rho, rho)
     rho = np.where(np.isfinite(rho), rhop(rho, lambda_, type_), 0.0)
 
     # for i in range(ny):
