@@ -1,5 +1,4 @@
-# Project Name
-Inverse Compositional Algorithm
+# Inverse Compositional Algorithm
 
 ## Description
 This is a Python implementation of the inverse compositional algorithm as defined in the publicaiton "The Inverse Compositional Algorithm for Parametric Registration", Image Processing On Line, 6 (2016), pp. 212–232. https://doi.org/10.5201/ipol.2016.153.
