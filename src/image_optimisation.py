@@ -128,8 +128,6 @@ def independent_vector_robust(
     Returns:
     numpy.ndarray: output independent vector
     """
-    #TODO: remove params nx, ny, nz and define them from the shape of DIJ   
-    #TODO: sanity check on the dimensions of DIJ and DI, they should be compatible 
     ny, nx, nz = DI.shape # suppose that DI is not flattened
     b = np.zeros(nparams, dtype=np.float64)
 
