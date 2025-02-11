@@ -2,10 +2,12 @@ import tensorflow as tf
 from tensorflow.keras.layers import Layer
 import numpy as np
 from enum import Enum
+
 import image_optimisation as io
 import transformation as tr
 import constants as cts
 import zoom as zm
+import bicubic_interpolation as bi
 
 
 def cubic(x):
@@ -22,13 +24,16 @@ def cubic(x):
 
 def get_pixel_value(img, x, y):
     # img : [batch, H, W, C]
-    xt = tf.squeeze(x)
-    yt = tf.squeeze(y)
-
-    batch_size = tf.shape(img)[0]  
-    batch_idx = tf.range(batch_size)                        # (batch_size,)
-    B, Y, X = tf.meshgrid(batch_idx, yt, xt, indexing="ij")
-    indices = tf.stack([B, Y, X], axis=-1)  # (batch, ny, nx, channels)
+    batch_size = tf.shape(img)[0]
+    H = tf.shape(img)[1]
+    W = tf.shape(img)[2]
+    
+    # Créer un tenseur d'indices pour le batch de forme [batch, H, W]
+    batch_idx = tf.reshape(tf.range(batch_size), [batch_size, 1, 1])
+    batch_idx = tf.tile(batch_idx, [1, H, W])
+    
+    # Empiler pour obtenir des indices de forme [batch, H, W, 3]
+    indices = tf.stack([batch_idx, y, x], axis=-1)
     
     return tf.gather_nd(img, indices)
 
@@ -38,8 +43,9 @@ def bicubic_sampler(image, grid):
     # grid: [batch, newH, newW, 2] avec coordonnées (y, x) en flottants
     input_shape = tf.shape(image)
     batch_size, H, W, channels = input_shape[0], input_shape[1], input_shape[2], input_shape[3]
-    grid_y = grid[:, :, 0]  # extract y coordinates with shape [batch, H]
-    grid_x = grid[:, 0, :]  # extract x coordinates with shape [batch, W]
+    # grid shape is (batch, 3, H, W) 3 for x, y, 1
+    grid_x = grid[:, 0, :, :]  # extract x coordinates with shape [batch, W]
+    grid_y = grid[:, 1, :, :]  # extract y coordinates with shape [batch, H]
 
     # Calcul des coordonnées entières pour le voisinage (début)
     x0 = tf.cast(tf.floor(grid_x), tf.int32)  # shape [batch, W]
@@ -64,7 +70,7 @@ def bicubic_sampler(image, grid):
     weights_y = tf.stack(weights_y, axis=-1)  # list of 4 tensors with shape [batch, H] -> [batch, H, 4]
 
     # Tensor with shape [batch, H, W, channels]
-    output = tf.zeros([batch_size, tf.shape(grid)[1], tf.shape(grid)[2], channels], dtype=image.dtype)
+    output = tf.zeros([batch_size, tf.shape(grid)[2], tf.shape(grid)[3], channels], dtype=image.dtype)
 
     # Accumulation on the 16 neighbors
     for i in range(4):
@@ -76,8 +82,9 @@ def bicubic_sampler(image, grid):
             x_i = tf.clip_by_value(x_i, 0, W - 1)
             y_j = tf.clip_by_value(y_j, 0, H - 1)
             pixel = get_pixel_value(image, x_i, y_j)  # [batch, newH, newW, channels]
-            w = tf.expand_dims(weights_y[:, :, j], axis=-1) * tf.expand_dims(weights_x[:, :, i], axis=1)
-            output += pixel * tf.expand_dims(w, axis=-1)  # expand_dims of w to replicate it for all channels
+            w = weights_y[:, :, :, j] * weights_x[:, :, :, i]
+            # output += pixel * tf.expand_dims(w, axis=-1)  # expand_dims of w to replicate it for all channels
+            output += pixel * tf.expand_dims(w, axis=-1)
     return output
 
 class RobustInverseCompositional(Layer):
@@ -216,9 +223,11 @@ class RobustInverseCompositional(Layer):
         X, Y = tf.meshgrid(x, y)
         ones = tf.ones_like(X)
         coords = tf.stack([X, Y, ones], axis=0)
+        # coords = tf.stack([Y, X, ones], axis=0)  #TODO: check that is homogeneous coordinates
         # Use of map_fn to apply the function params2matrix to each element of p (batch of parameters)
+        #TODO : check if the function is correctly applied regarding X, Y, ones order in coords and in the matrix
         affine_matrix = tf.map_fn(lambda params: tr.params2matrix(params, self.transform_type), p, dtype=tf.float32)
-        transformed = tf.einsum('bij,jhw->bhw', affine_matrix, coords)
+        transformed = tf.einsum('bij,jhw->bihw', affine_matrix, coords)
         
         return transformed
 
@@ -251,9 +260,14 @@ class RobustInverseCompositional(Layer):
         # print("DIJ shape: ", DIJ.shape)
         # print("p shape: ", p.shape)
         
-        def body(i, p, error):
+        def body(i, p, error, DI_init, Iw_init):
             # Warp I2 with current parameters
             Iw = self.warp_image(I2, p)
+            # wraped_list = []
+            # for im in range(self.batch_size):
+            #     wraped = bi.bicubic_interpolation_skimage(I2.numpy()[im, :, :, :], p.numpy()[im, :], self.transform_type, self.nanifoutside, self.delta) 
+            #     wraped_list.append(wraped)
+            # Iw = tf.stack(wraped_list, axis=0)
             DI = Iw - I1
             
             # Compute robust error
@@ -273,6 +287,7 @@ class RobustInverseCompositional(Layer):
             DIJt = tf.einsum("bhwcn->bhwnc", DIJ_filled)
             DI_filled = tf.where(tf.keras.ops.isfinite(DI), DI, 0)
             H = tf.einsum("bhw,bhwnc,bhwcm->bnm", rho, DIJt, DIJ_filled)
+            H_inv = tf.linalg.inv(H)
             # print("H shape: ", H.shape)
             
             prod = tf.einsum("bhwnc,bhwc->bhwn", DIJt, DI_filled)
@@ -281,7 +296,6 @@ class RobustInverseCompositional(Layer):
             # print("b shape: ", b.shape)
             
             # Solve for dp
-            H_inv = tf.linalg.inv(H)
             dp = tf.einsum('bij,bj->bi', H_inv, b)  # dp is a batch of updates
             error = tf.norm(dp) # error is a batch of update norms
             # print("p shape: ", p.shape)
@@ -304,9 +318,9 @@ class RobustInverseCompositional(Layer):
                         tf.print(f"{p[b][i]} ", end="")
                     tf.print(f"{p[b][self.nparams - 1]}), lambda_={self.lambda_it}")
 
-            return i+1, p, error
+            return i+1, p, error, DI, Iw
         
-        def cond(i, p, error):
+        def cond(i, p, error, DI, Iw):
             # We assume that if a batch of images is provided to the layer,
             # images are homogenous in the sense that they originate from the
             # same scene and are captured by the same sensor. Therefore, we
@@ -320,15 +334,24 @@ class RobustInverseCompositional(Layer):
 
         i = tf.constant(0)
         error = tf.constant(1e10, dtype=tf.float32)
-        i, p_final, final_error = tf.while_loop(
-            cond, body, (i, p, error),
+        Iw_init = self.warp_image(I2, p)
+        DI_init = Iw_init - I1
+
+        i, p_final, final_error, DI_final, Iw_final = tf.while_loop(
+            cond, body, (i, p, error, DI_init, Iw_init),
+            parallel_iterations=1,
             maximum_iterations=self.max_iter)
         
         # Compute final warped image
-        Iw_final = self.warp_image(I2, p_final)
-        DI_final = Iw_final - I1
+        # wraped_list = []
+        # for im in range(self.batch_size):
+        #     wraped = bi.bicubic_interpolation_skimage(I2.numpy()[im, :, :, :], p_final.numpy()[im, :], self.transform_type, self.nanifoutside, self.delta) 
+        #     wraped_list.append(wraped)
+        # Iw_final = tf.stack(wraped_list, axis=0)
+        Iwr = self.warp_image(I2, p_final)
+        DIr = Iw_final - I1
         
-        return p_final, final_error, DI_final, Iw_final
+        return p_final, final_error, DIr, Iwr
 
 class PyramidalInverseCompositional(Layer):
     def __init__(self, 
