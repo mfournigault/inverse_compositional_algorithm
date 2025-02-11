@@ -200,7 +200,7 @@ def robust_inverse_compositional_algorithm(
     Ix[:, 1:-1, :] = 0.5 * (I1[:, 2:, :] - I1[:, :-2, :])
     Iy[1:-1, :, :] = 0.5 * (I1[2:, :, :] - I1[:-2, :, :])
 
-     # Like in the modified version of the algorithm, we discard boundary pixels
+    # Like in the modified version of the algorithm, we discard boundary pixels
     if (nanifoutside is True and delta > 0):
         Ix[:delta, :, :] = np.nan
         Ix[-delta:, :, :] = np.nan

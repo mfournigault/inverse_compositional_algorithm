@@ -87,6 +87,27 @@ def bicubic_sampler(image, grid):
             output += pixel * tf.expand_dims(w, axis=-1)
     return output
 
+
+def mark_boundaries_as_nan(tensor, delta):
+    # tensor with shape [batch, H, W, C]
+    shape = tf.shape(tensor)
+    H = shape[1]
+    W = shape[2]
+    # create a mask for rows
+    rows = tf.range(H)
+    valid_rows = tf.logical_and(rows >= delta, rows < H - delta)
+    # create a mask for columns
+    cols = tf.range(W)
+    valid_cols = tf.logical_and(cols >= delta, cols < W - delta)
+    valid_mask = tf.logical_and(
+        tf.expand_dims(valid_rows, axis=1),
+        tf.expand_dims(valid_cols, axis=0)
+    )  # shape [H, W]
+    valid_mask = tf.reshape(valid_mask, [1, H, W, 1])
+    valid_mask = tf.tile(valid_mask, [shape[0], 1, 1, shape[3]])
+    # replace non valid pixels with NaN
+    return tf.where(valid_mask, tensor, tf.constant(np.nan, dtype=tensor.dtype))
+
 class RobustInverseCompositional(Layer):
     
     def __init__(
@@ -254,6 +275,11 @@ class RobustInverseCompositional(Layer):
         # print("I1 shape: ", I1.shape)
         # print("I2 shape: ", I2.shape)
         Ix, Iy = self.compute_gradients(I1)
+        # Like in the modified version of the algorithm, we discard boundary pixels
+        if (self.nanifoutside is True and self.delta > 0):
+            Ix = mark_boundaries_as_nan(Ix, self.delta)
+            Iy = mark_boundaries_as_nan(Iy, self.delta)
+        
         # print("Ix shape: ", Ix.shape)
         # print("Iy shape: ", Iy.shape)
         DIJ = self.steepest_descent_images(Ix, Iy, J)
