@@ -9,6 +9,8 @@ import constants as cts
 import zoom as zm
 import bicubic_interpolation as bi
 
+import imageio
+
 
 def cubic(x):
     absx = tf.abs(x)
@@ -107,6 +109,19 @@ def mark_boundaries_as_nan(tensor, delta):
     valid_mask = tf.tile(valid_mask, [shape[0], 1, 1, shape[3]])
     # replace non valid pixels with NaN
     return tf.where(valid_mask, tensor, tf.constant(np.nan, dtype=tensor.dtype))
+
+
+def save_image(img_tensor, name):
+    prep = tf.where(tf.math.is_nan(img_tensor), tf.constant(0., dtype=img_tensor.dtype), img_tensor)
+    min_val = tf.reduce_min(prep)
+    max_val = tf.reduce_max(prep)
+    tf.print("Étendue de prep : min =", min_val, ", max =", max_val)
+    normalized = (prep - min_val) / (max_val - min_val)
+    
+    # Convertir en uint8 [0,255] en utilisant tf.image.convert_image_dtype
+    img_uint8 = tf.image.convert_image_dtype(normalized, tf.uint8).numpy()
+    imageio.imwrite(name, img_uint8)
+
 
 class RobustInverseCompositional(Layer):
     
@@ -209,12 +224,18 @@ class RobustInverseCompositional(Layer):
                                    tr.TransformType.AFFINITY, tr.TransformType.HOMOGRAPHY]:
             grid = self.transformed_grid(p)  # grid de forme [batch, self.ny, self.nx, 2]
             warped = bicubic_sampler(I2, grid)
-
-            # Création d'un masque indiquant où I2 n'est pas NaN
-            mask = tf.cast(~tf.math.is_nan(I2), I2.dtype)
-            # Pour le masque, on utilise une interpolation en nearest neighbor.
             # Ici, nous pouvons utiliser tf.gather_nd sur les indices entiers.
             grid_int = tf.cast(tf.round(grid), tf.int32)
+
+            # Création d'un masque indiquant où I2 n'est pas NaN
+            mask = tf.logical_and(
+                        tf.logical_and(grid_int[:, 0, :, :] >= self.delta, 
+                                        grid_int[:, 0, :, :] <= I2.shape[2]-self.delta),
+                        tf.logical_and(grid_int[:, 1, :, :] >= self.delta, 
+                                        grid_int[:, 1, :, :] <= I2.shape[1]-self.delta)
+                    )
+            mask = tf.expand_dims(mask, axis=-1)
+            # Pour le masque, on utilise une interpolation en nearest neighbor.
         
             def sample_mask(mask, grid_int):
                 # Supposons que mask a la forme (batch, H, W, channels)
@@ -230,8 +251,11 @@ class RobustInverseCompositional(Layer):
                 # indices = tf.stack([B, Y, X], axis=-1)
                 return tf.gather_nd(mask, indices)
 
-            mask_warped = sample_mask(mask, grid_int)
-            warped = tf.where(mask_warped < 0.5,
+            # mask_warped = sample_mask(mask, grid_int)
+            # warped = tf.where(mask_warped < 0.5,
+            #                     tf.constant(float('nan'), dtype=I2.dtype),
+            #                     warped)
+            warped = tf.where(mask == False,
                                 tf.constant(float('nan'), dtype=I2.dtype),
                                 warped)
             return warped
@@ -288,14 +312,14 @@ class RobustInverseCompositional(Layer):
         
         def body(i, p, error, DI_init, Iw_init):
             # Warp I2 with current parameters
-            Iw = self.warp_image(I2, p)
             # wraped_list = []
             # for im in range(self.batch_size):
             #     wraped = bi.bicubic_interpolation_skimage(I2.numpy()[im, :, :, :], p.numpy()[im, :], self.transform_type, self.nanifoutside, self.delta) 
             #     wraped_list.append(wraped)
             # Iw = tf.stack(wraped_list, axis=0)
+            Iw = self.warp_image(I2, p)
             DI = Iw - I1
-            
+
             # Compute robust error
             rho = self.robust_error(DI)
             # print("rho shape: ", rho.shape)
@@ -354,9 +378,6 @@ class RobustInverseCompositional(Layer):
             # images and we include the error of all images in the batch to
             # determine the convergence
             return (i < self.max_iter) and (error > self.TOL) 
-            # For now, we choose to process batch of images, and executing the maximum number of iterations
-            # TODO: state on the convergence criteria - we may consider that the batch of images is homogenous and that the convergence criteria is the same for all images
-            # return i < self.max_iter
 
         i = tf.constant(0)
         error = tf.constant(1e10, dtype=tf.float32)
@@ -374,10 +395,8 @@ class RobustInverseCompositional(Layer):
         #     wraped = bi.bicubic_interpolation_skimage(I2.numpy()[im, :, :, :], p_final.numpy()[im, :], self.transform_type, self.nanifoutside, self.delta) 
         #     wraped_list.append(wraped)
         # Iw_final = tf.stack(wraped_list, axis=0)
-        Iwr = self.warp_image(I2, p_final)
-        DIr = Iw_final - I1
         
-        return p_final, final_error, DIr, Iwr
+        return p_final, final_error, DI_final, Iw_final
 
 class PyramidalInverseCompositional(Layer):
     def __init__(self, 

@@ -443,7 +443,6 @@ It should not be the case, so there is a problem of calculation in the python im
 
 This implementation is validated on the unit tests and the results are available in the notebook `test_ica_keras.ipynb`.
 Several issues remains to be corrected:
-- The management of the domain definition with Nan values is not correct. Where we expect at the end to get 0 values in the display, we got duplicated border values.
-- The convergence is not as good as in the numpy implementation. The gradient dp converges much slower than in the reference results. 
-For example, taking the first unit test with the rubber whale image and the translation, 22 iterations are necessary to converge on the first scale with the keras implementation, where only 5 are necessary to converge with the numpy implementation. This might be linked to the first issue.
+- The management of the domain definition with Nan values has been fixed by correcting the computation of the mask in the function warp_image.
+- The convergence is now as good as in the numpy implementation. Fixed by correcting the domain definition.
 - Some personal functions need to be mapped into TF functions to enable to the execution end to end on the GPU.
