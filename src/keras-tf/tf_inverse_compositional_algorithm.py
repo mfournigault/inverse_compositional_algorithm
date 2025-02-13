@@ -8,86 +8,11 @@ import transformation as tr
 import constants as cts
 import zoom as zm
 import bicubic_interpolation as bi
+from tf_image_optimisation import tf_robust_error_function
+from tf_bicubic_interpolation import bicubic_sampler
+from tf_transformation import tf_update_transform
 
 import imageio
-
-
-def cubic(x):
-    absx = tf.abs(x)
-    absx2 = absx**2
-    absx3 = absx**3
-    # Fonction de base cubique de Keys
-    return tf.where(absx <= 1,
-                    (1.5 * absx3 - 2.5 * absx2 + 1.0),
-                    tf.where(absx < 2,
-                             (-0.5 * absx3 + 2.5 * absx2 - 4.0 * absx + 2.0),
-                             tf.zeros_like(x)))
-
-
-def get_pixel_value(img, x, y):
-    # img : [batch, H, W, C]
-    batch_size = tf.shape(img)[0]
-    H = tf.shape(img)[1]
-    W = tf.shape(img)[2]
-    
-    # Créer un tenseur d'indices pour le batch de forme [batch, H, W]
-    batch_idx = tf.reshape(tf.range(batch_size), [batch_size, 1, 1])
-    batch_idx = tf.tile(batch_idx, [1, H, W])
-    
-    # Empiler pour obtenir des indices de forme [batch, H, W, 3]
-    indices = tf.stack([batch_idx, y, x], axis=-1)
-    
-    return tf.gather_nd(img, indices)
-
-
-def bicubic_sampler(image, grid):
-    # image: [batch, H, W, C]
-    # grid: [batch, newH, newW, 2] avec coordonnées (y, x) en flottants
-    input_shape = tf.shape(image)
-    batch_size, H, W, channels = input_shape[0], input_shape[1], input_shape[2], input_shape[3]
-    # grid shape is (batch, 3, H, W) 3 for x, y, 1
-    grid_x = grid[:, 0, :, :]  # extract x coordinates with shape [batch, W]
-    grid_y = grid[:, 1, :, :]  # extract y coordinates with shape [batch, H]
-
-    # Calcul des coordonnées entières pour le voisinage (début)
-    x0 = tf.cast(tf.floor(grid_x), tf.int32)  # shape [batch, W]
-    y0 = tf.cast(tf.floor(grid_y), tf.int32)  # shape [batch, H]
-
-    # Pour l'interpolation bicubique, on a besoin de 4 pixels dans chaque direction.
-    # On crée donc les 4 indices autour de (x0,y0)
-    x_indexes = [x0 - 1, x0, x0 + 1, x0 + 2]  # list of 4 indices with shape [batch, W]
-    y_indexes = [y0 - 1, y0, y0 + 1, y0 + 2]  # list of 4 indices with shape [batch, H]
-
-    # Calcul des poids selon la distance
-    x_diff = grid_x - tf.cast(x0, tf.float32)  # shape [batch, W]
-    y_diff = grid_y - tf.cast(y0, tf.float32)  # shape [batch, H]
-
-    # list of 4 indices with shape [batch, W]
-    weights_x = [cubic(x_diff + 1.0), cubic(x_diff), cubic(x_diff - 1.0), cubic(x_diff - 2.0)]
-    # list of 4 indices with shape [batch, H]
-    weights_y = [cubic(y_diff + 1.0), cubic(y_diff), cubic(y_diff - 1.0), cubic(y_diff - 2.0)]
-
-    # Convert list into tensors with shape [batch, d, 4]
-    weights_x = tf.stack(weights_x, axis=-1)  # list of 4 tensors with shape [batch, W] -> [batch, W, 4]
-    weights_y = tf.stack(weights_y, axis=-1)  # list of 4 tensors with shape [batch, H] -> [batch, H, 4]
-
-    # Tensor with shape [batch, H, W, channels]
-    output = tf.zeros([batch_size, tf.shape(grid)[2], tf.shape(grid)[3], channels], dtype=image.dtype)
-
-    # Accumulation on the 16 neighbors
-    for i in range(4):
-        for j in range(4):
-            # Sélection des indices i, j
-            x_i = x_indexes[i]
-            y_j = y_indexes[j]
-            # Pour éviter de sortir des bornes, on clippe les indices
-            x_i = tf.clip_by_value(x_i, 0, W - 1)
-            y_j = tf.clip_by_value(y_j, 0, H - 1)
-            pixel = get_pixel_value(image, x_i, y_j)  # [batch, newH, newW, channels]
-            w = weights_y[:, :, :, j] * weights_x[:, :, :, i]
-            # output += pixel * tf.expand_dims(w, axis=-1)  # expand_dims of w to replicate it for all channels
-            output += pixel * tf.expand_dims(w, axis=-1)
-    return output
 
 
 def mark_boundaries_as_nan(tensor, delta):
@@ -128,14 +53,37 @@ class RobustInverseCompositional(Layer):
     def __init__(
         self, 
         transform_type: tr.TransformType, 
-        TOL: float = 1e-3,    # Tolerance used for the convergence in the iterations
-        robust_type: io.RobustErrorFunctionType = io.RobustErrorFunctionType.CHARBONNIER, # type (RobustErrorFunctionType) of robust error function
-        lambda_: float = 0.0, # parameter of robust error function
-        nanifoutside: bool = True, # if True, the pixels outside the image are considered as NaN
-        delta: int = 10, # maximal distance to boundary to consider the pixel as NaN 
-        verbose: bool=True,  # switch on messages
-        max_iter: int = 30, # maximal number of iterations
+        TOL: float = 1e-3,
+        robust_type: io.RobustErrorFunctionType = io.RobustErrorFunctionType.CHARBONNIER,
+        lambda_: float = 0.0,
+        nanifoutside: bool = True,
+        delta: int = 10,
+        verbose: bool = True,
+        max_iter: int = 30,
          **kwargs):
+        """
+        Initialize the RobustInverseCompositional class.
+        Parameters:
+        -----------
+        transform_type : tr.TransformType
+            The type of transformation to be used.
+        TOL : float, optional
+            Tolerance used for the convergence in the iterations (default is 1e-3).
+        robust_type : io.RobustErrorFunctionType, optional
+            The type of robust error function to be used (default is CHARBONNIER).
+        lambda_ : float, optional
+            Parameter of the robust error function (default is 0.0).
+        nanifoutside : bool, optional
+            If True, the pixels outside the image are considered as NaN (default is True).
+        delta : int, optional
+            Maximal distance to boundary to consider the pixel as NaN (default is 10).
+        verbose : bool, optional
+            If True, switch on messages (default is True).
+        max_iter : int, optional
+            Maximal number of iterations (default is 30).
+        **kwargs : dict
+            Additional keyword arguments.
+        """
         
         super(RobustInverseCompositional, self).__init__(trainable=False, **kwargs)
         self.transform_type = transform_type
@@ -150,10 +98,31 @@ class RobustInverseCompositional(Layer):
         self.max_iter = max_iter
 
     def build(self, input_shape):
+        """
+        Builds the internal representation of the layer based on the input shape.
+
+        Parameters:
+        input_shape (tuple): A tuple representing the shape of the input tensor. 
+                             The first element of the tuple is expected to be a list where:
+                             - The first element is the batch size.
+                             - The second, third, and fourth elements are the dimensions (ny, nx, nz) of the input tensor.
+        """
         self.batch_size = input_shape[0][0]
         self.ny, self.nx, self.nz = input_shape[0][1:4]
         
     def compute_gradients(self, I1):
+        """
+        Computes the gradients of the input image tensor I1 along the x and y axes.
+
+        Args:
+            I1 (tf.Tensor): A 4D tensor representing the input image with shape 
+                            (batch_size, height, width, channels).
+
+        Returns:
+            tuple: A tuple containing two 4D tensors:
+                - Ix (tf.Tensor): The gradient of the input image along the x-axis.
+                - Iy (tf.Tensor): The gradient of the input image along the y-axis.
+        """
         Ix = tf.zeros_like(I1)
         Iy = tf.zeros_like(I1)
         Ix = (I1[:, :, 2:, :] - I1[:, :, :-2, :]) * 0.5
@@ -163,7 +132,21 @@ class RobustInverseCompositional(Layer):
         return Ix, Iy
 
     def jacobian(self):
-        # Example for affine transform, implement other transforms as needed
+        """
+        Compute the Jacobian matrix for the specified transformation type.
+
+        The Jacobian matrix is computed based on the transformation type and the 
+        dimensions of the input image. The supported transformation types are:
+        - TRANSLATION
+        - EUCLIDEAN
+        - SIMILARITY
+        - AFFINITY
+        - HOMOGRAPHY
+
+        Returns:
+            tf.Tensor: A tensor representing the Jacobian matrix with an added 
+            batch dimension.
+        """
         x = tf.range(self.nx, dtype=tf.float32)
         y = tf.range(self.ny, dtype=tf.float32)
         X, Y = tf.meshgrid(x, y)
@@ -180,113 +163,119 @@ class RobustInverseCompositional(Layer):
                 J = tf.stack([ones, zeros, X, Y, zeros, zeros, zeros, ones, zeros, zeros, X, Y], axis=-1)
             case tr.TransformationType.HOMOGRAPHY:
                 J = tf.stack([X, Y, ones, zeros, zeros, zeros, -X*X, -X*Y, zeros, zeros, zeros, X, Y, ones, -X*Y, -Y*Y], axis=-1)
-        # print("--- J shape: ", J.shape)
-        # J = J[..., :self.nparams]
-        # print("----- J shape: ", J.shape)
         return tf.expand_dims(J, 0)  # Add batch dimension
 
     def steepest_descent_images(self, Ix, Iy, J):
-        # gradients = tf.stack([Ix, Iy], axis=-1)
-        # return tf.einsum('bhwci,bhwji->bhwj', gradients, J) #TODO: Check if this is correct
-        # Supposons que J a une taille (b, ny, nx, 2*m) avec m = nparams/2
-        # print("J shape: ", J.shape)
+        """
+        Compute the steepest descent images for the inverse compositional algorithm.
+        Args:
+            Ix (tf.Tensor): The gradient of the image along the x-axis with shape (b, ny, nx, nz).
+            Iy (tf.Tensor): The gradient of the image along the y-axis with shape (b, ny, nx, nz).
+            J (tf.Tensor): The Jacobian matrix with shape (b, ny, nx, 2*m), where m = nparams/2.
+        Returns:
+            tf.Tensor: The steepest descent images with shape (b, ny, nx, nz, m).
+        """
         Jx, Jy = tf.split(J, num_or_size_splits=2, axis=-1)  # Chaque tenseur a la taille (b, ny, nx, m)
-        # print("Jx shape: ", Jx.shape)
-        # print("Jy shape: ", Jy.shape)
 
-        # Étendre Ix et Iy pour pouvoir multiplier par broadcast avec Jx et Jy.
-        # Ix et Iy ont la taille (b, ny, nx, nz). On les étend sur la dernière dimension.
+        # Expand Ix and Iy along the last dimension to be able to multiply with Jx and Jy.
         Ix_exp = tf.expand_dims(Ix, axis=-1)  # (b, ny, nx, nz, 1)
         Iy_exp = tf.expand_dims(Iy, axis=-1)  # (b, ny, nx, nz, 1)
-        # print("Ix_exp shape: ", Ix_exp.shape)
-        # print("Iy_exp shape: ", Iy_exp.shape)
 
-        # Reshape Jx et Jy pour qu'ils aient un axe "duplicate" pour nz.
-        Jx_exp = tf.expand_dims(Jx, axis=2)  # (b, ny, 1, nx, m) ou réarranger selon l'ordre souhaité
+        # Reshape Jx et Jy to get a "duplicate" for nz.
+        Jx_exp = tf.expand_dims(Jx, axis=2)  # (b, ny, 1, nx, m) 
         Jy_exp = tf.expand_dims(Jy, axis=2)  # (b, ny, 1, nx, m)
-        # print("Jx_exp shape: ", Jx_exp.shape)
-        # print("Jy_exp shape: ", Jy_exp.shape)
 
-        # Pour correspondre aux dimensions, on peut réarranger Jx et Jy en (b, ny, nx, 1, m)
         Jx_exp = tf.reshape(Jx, [tf.shape(Jx)[0], tf.shape(Jx)[1], tf.shape(Jx)[2], 1, tf.shape(Jx)[3]])
         Jy_exp = tf.reshape(Jy, [tf.shape(Jy)[0], tf.shape(Jy)[1], tf.shape(Jy)[2], 1, tf.shape(Jy)[3]])
-        # print("Jx_exp shape: ", Jx_exp.shape)
-        # print("Jy_exp shape: ", Jy_exp.shape)
 
-        # Alors, DIJ est défini par la somme des deux contributions :
-        DIJ = Ix_exp * Jx_exp + Iy_exp * Jy_exp  # Résultat de taille (b, ny, nx, nz, m)
-        # print("DIJ shape: ", DIJ.shape)
+        # DIJ is defined by the sum of the two contributions
+        DIJ = Ix_exp * Jx_exp + Iy_exp * Jy_exp  # (b, ny, nx, nz, m)
         return DIJ
 
     def warp_image(self, I2, p):
-        if self.transform_type in [tr.TransformType.TRANSLATION, tr.TransformType.EUCLIDEAN,
+        """
+        Warps the input image I2 according to the transformation parameters p.
+        Parameters:
+        -----------
+        I2 : tf.Tensor
+            The input image tensor to be warped. Expected shape is [batch, height, width, channels].
+        p : tf.Tensor
+            The transformation parameters tensor.
+        Returns:
+        --------
+        tf.Tensor
+            The warped image tensor with the same shape as I2, where the transformation has been applied.
+            Pixels outside the valid region are set to NaN.
+        Raises:
+        -------
+        ValueError
+            If the transformation type is not supported.
+        """
+        if self.transform_type in [tr.TransformType.TRANSLATION,
+                                   tr.TransformType.EUCLIDEAN,
                                    tr.TransformType.SIMILARITY,
-                                   tr.TransformType.AFFINITY, tr.TransformType.HOMOGRAPHY]:
-            grid = self.transformed_grid(p)  # grid de forme [batch, self.ny, self.nx, 2]
+                                   tr.TransformType.AFFINITY, 
+                                   tr.TransformType.HOMOGRAPHY]:
+            grid = self.transformed_grid(p)  # grid with shape [batch, self.ny, self.nx, 2]
             warped = bicubic_sampler(I2, grid)
-            # Ici, nous pouvons utiliser tf.gather_nd sur les indices entiers.
             grid_int = tf.cast(tf.round(grid), tf.int32)
 
-            # Création d'un masque indiquant où I2 n'est pas NaN
+            # Define a mask to set pixels outside the valid region to NaN
             mask = tf.logical_and(
                         tf.logical_and(grid_int[:, 0, :, :] >= self.delta, 
-                                        grid_int[:, 0, :, :] <= I2.shape[2]-self.delta),
+                                       grid_int[:, 0, :, :] <= I2.shape[2]-self.delta),
                         tf.logical_and(grid_int[:, 1, :, :] >= self.delta, 
-                                        grid_int[:, 1, :, :] <= I2.shape[1]-self.delta)
+                                       grid_int[:, 1, :, :] <= I2.shape[1]-self.delta)
                     )
             mask = tf.expand_dims(mask, axis=-1)
-            # Pour le masque, on utilise une interpolation en nearest neighbor.
-        
-            def sample_mask(mask, grid_int):
-                # Supposons que mask a la forme (batch, H, W, channels)
-                # Créer une grille d'indices spatiaux (B, Y, X) de forme (batch, H, W)
-                B, Y, X, C = tf.meshgrid(tf.range(tf.shape(mask)[0]), 
-                                    tf.range(tf.shape(mask)[1]), 
-                                    tf.range(tf.shape(mask)[2]), 
-                                    tf.range(tf.shape(mask)[3]),
-                                    indexing="ij")
-
-                # Empiler pour obtenir des indices de forme (batch, H, W, channels, 4)
-                indices = tf.stack([B, Y, X, C], axis=-1)
-                # indices = tf.stack([B, Y, X], axis=-1)
-                return tf.gather_nd(mask, indices)
-
-            # mask_warped = sample_mask(mask, grid_int)
-            # warped = tf.where(mask_warped < 0.5,
-            #                     tf.constant(float('nan'), dtype=I2.dtype),
-            #                     warped)
             warped = tf.where(mask == False,
-                                tf.constant(float('nan'), dtype=I2.dtype),
-                                warped)
+                              tf.constant(float('nan'), dtype=I2.dtype),
+                              warped)
             return warped
         else:
             raise ValueError("Unsupported transformation type")
 
     def transformed_grid(self, p):
+        """
+        Transforms a grid of coordinates using a batch of affine transformation parameters.
+        Args:
+            p (tf.Tensor): A tensor of shape (batch_size, num_params) containing the affine transformation parameters for each element in the batch.
+        Returns:
+            tf.Tensor: A tensor of shape (batch_size, 3, nx, ny) containing the transformed grid coordinates for each element in the batch.
+        """
         x = tf.linspace(0.0, self.nx-1, self.nx)
         y = tf.linspace(0.0, self.ny-1, self.ny)
         X, Y = tf.meshgrid(x, y)
         ones = tf.ones_like(X)
         coords = tf.stack([X, Y, ones], axis=0)
-        # coords = tf.stack([Y, X, ones], axis=0)  #TODO: check that is homogeneous coordinates
         # Use of map_fn to apply the function params2matrix to each element of p (batch of parameters)
-        #TODO : check if the function is correctly applied regarding X, Y, ones order in coords and in the matrix
         affine_matrix = tf.map_fn(lambda params: tr.params2matrix(params, self.transform_type), p, dtype=tf.float32)
         transformed = tf.einsum('bij,jhw->bihw', affine_matrix, coords)
         
         return transformed
 
-    def robust_error(self, DI):
-        # apply our robust error function, considering that in input we may have a batch of images
-        rho_list = []
-        for image in tf.range(self.batch_size):
-            rho = io.robust_error_function(DI.numpy()[image, :, :, :], self.lambda_it, self.robust_type)
-            # adding the robust error to the tensor of robust errors
-            rho_list.append(rho)
-        rho_tensor = tf.stack(rho_list, axis=0)
-        return rho_tensor
-
     def call(self, inputs):
+        """
+        Perform the inverse compositional algorithm on the input images.
+        Args:
+            inputs (tuple): A tuple containing three elements:
+                - I1 (tf.Tensor): The first batch of images.
+                - I2 (tf.Tensor): The second batch of images.
+                - p (tf.Tensor): The initial parameters for the transformation.
+        Returns:
+            tuple: A tuple containing four elements:
+                - p_final (tf.Tensor): The final transformation parameters.
+                - final_error (tf.Tensor): The final error value.
+                - DI_final (tf.Tensor): The difference image after the final iteration.
+                - Iw_final (tf.Tensor): The final warped image.
+        Notes:
+            - The function assumes that the input images are batches, where 
+            each image in I1 is associated with an image in I2 and an initial parameter set p.
+            - The function performs several steps including casting the input 
+            images to float32, computing gradients, discarding boundary pixels 
+            if necessary, and iteratively updating the transformation parameters using a robust error function.
+            - The convergence criteria are based on the error norm and the maximum number of iterations.
+        """
         # inputs are batches: every I1 in the batch is associated to a I2 in 
         # the batch and a p_init
         I1, I2, p = inputs
@@ -295,34 +284,27 @@ class RobustInverseCompositional(Layer):
         if I2.dtype != tf.float32:
             I2 = tf.cast(I2, tf.float32)
         J = self.jacobian()
-        # print("Jacobian shape: ", J.shape)
-        # print("I1 shape: ", I1.shape)
-        # print("I2 shape: ", I2.shape)
         Ix, Iy = self.compute_gradients(I1)
         # Like in the modified version of the algorithm, we discard boundary pixels
         if (self.nanifoutside is True and self.delta > 0):
             Ix = mark_boundaries_as_nan(Ix, self.delta)
             Iy = mark_boundaries_as_nan(Iy, self.delta)
         
-        # print("Ix shape: ", Ix.shape)
-        # print("Iy shape: ", Iy.shape)
         DIJ = self.steepest_descent_images(Ix, Iy, J)
-        # print("DIJ shape: ", DIJ.shape)
-        # print("p shape: ", p.shape)
         
         def body(i, p, error, DI_init, Iw_init):
             # Warp I2 with current parameters
-            # wraped_list = []
-            # for im in range(self.batch_size):
-            #     wraped = bi.bicubic_interpolation_skimage(I2.numpy()[im, :, :, :], p.numpy()[im, :], self.transform_type, self.nanifoutside, self.delta) 
-            #     wraped_list.append(wraped)
-            # Iw = tf.stack(wraped_list, axis=0)
             Iw = self.warp_image(I2, p)
             DI = Iw - I1
 
             # Compute robust error
-            rho = self.robust_error(DI)
-            # print("rho shape: ", rho.shape)
+            #TODO: apply map_fn to compute the robust error for each image in the batch
+            rho = tf.map_fn(
+                lambda x: tf_robust_error_function(x, self.lambda_it, self.robust_type),
+                DI,
+                dtype=tf.float32
+            )
+            # rho = tf_robust_error_function(DI, self.lambda_it, self.robust_type)
             
             # update lambda
             if self.lambda_ <= 0 and self.lambda_it > cts.LAMBDA_N:
@@ -331,35 +313,27 @@ class RobustInverseCompositional(Layer):
                     self.lambda_it = cts.LAMBDA_N
             
             # Compute Hessian and b
-            # weighted_DIJ = DIJ * tf.expand_dims(rho, -1)
-            # H = tf.einsum('bhwij,bhwik->bjk', DIJ, weighted_DIJ)
             DIJ_filled = tf.where(tf.keras.ops.isfinite(DIJ), DIJ, 0)
             DIJt = tf.einsum("bhwcn->bhwnc", DIJ_filled)
             DI_filled = tf.where(tf.keras.ops.isfinite(DI), DI, 0)
             H = tf.einsum("bhw,bhwnc,bhwcm->bnm", rho, DIJt, DIJ_filled)
             H_inv = tf.linalg.inv(H)
-            # print("H shape: ", H.shape)
-            
+        
             prod = tf.einsum("bhwnc,bhwc->bhwn", DIJt, DI_filled)
             prod = tf.einsum("bhw,bhwn->bhwn", rho, prod)
             b = tf.einsum('bhwn->bn', prod)
-            # print("b shape: ", b.shape)
             
             # Solve for dp
             dp = tf.einsum('bij,bj->bi', H_inv, b)  # dp is a batch of updates
             error = tf.norm(dp) # error is a batch of update norms
-            # print("p shape: ", p.shape)
-            # print("dp shape: ", dp.shape)
-            # Update the warp x'(x;p) := x'(x;p) * x'(x;dp)^-1
-            updated_params = []
-            for im in range(self.batch_size):
-                #TODO: tf.map_fn
-                upparam = tr.update_transform(p.numpy()[im, :], dp.numpy()[im, :], self.transform_type)  
-                updated_params.append(upparam)
-            p = tf.stack(updated_params, axis=0)
+        
+            updated_params = tf.map_fn(
+                lambda x: tf_update_transform(x[0], x[1], self.transform_type),
+                (p, dp),
+                dtype=tf.float32
+            )
+            p = updated_params
             
-            # print("dp shape: ", dp.shape)
-            # print("error shape: ", error.shape)
             if self.verbose:
                 for b in range(self.batch_size):
                     # tf.print(f"--- Batch {b}")
@@ -389,27 +363,22 @@ class RobustInverseCompositional(Layer):
             parallel_iterations=1,
             maximum_iterations=self.max_iter)
         
-        # Compute final warped image
-        # wraped_list = []
-        # for im in range(self.batch_size):
-        #     wraped = bi.bicubic_interpolation_skimage(I2.numpy()[im, :, :, :], p_final.numpy()[im, :], self.transform_type, self.nanifoutside, self.delta) 
-        #     wraped_list.append(wraped)
-        # Iw_final = tf.stack(wraped_list, axis=0)
-        
         return p_final, final_error, DI_final, Iw_final
 
 class PyramidalInverseCompositional(Layer):
-    def __init__(self, 
-                    transform_type: tr.TransformType, # typeof transformation
-                    nscales: int=3, # number of scales
-                    nu: float=0.5,      # downsampling factor
-                    TOL: float=1e-3,     # stopping criterion threshold
-                    robust_type: io.RobustErrorFunctionType=io.RobustErrorFunctionType.CHARBONNIER,  # type of robust error function
-                    lambda_: float=0.0,  # parameter of robust error function
-                    nanifoutside: bool=True, # if True, the pixels outside the image are considered as NaN
-                    delta: int=10, # maximal distance to boundary to consider the pixel as NaN
-                    verbose: bool=True,  # switch on messages
-                    **kwargs):
+    def __init__(
+                self, 
+                transform_type: tr.TransformType, # typeof transformation
+                nscales: int=3, # number of scales
+                nu: float=0.5,      # downsampling factor
+                TOL: float=1e-3,     # stopping criterion threshold
+                robust_type: io.RobustErrorFunctionType=io.RobustErrorFunctionType.CHARBONNIER,  # type of robust error function
+                lambda_: float=0.0,  # parameter of robust error function
+                nanifoutside: bool=True, # if True, the pixels outside the image are considered as NaN
+                delta: int=10, # maximal distance to boundary to consider the pixel as NaN
+                verbose: bool=True,  # switch on messages
+                **kwargs
+                ):
         super(PyramidalInverseCompositional, self).__init__(trainable=False, **kwargs)
         self.nscales = nscales
         self.nu = nu
@@ -450,8 +419,15 @@ class PyramidalInverseCompositional(Layer):
         I1_pyramid = [I1]
         I2_pyramid = [I2]
         for i in range(1, self.nscales):
-            I1_pyramid.append(tf.image.resize(I1_pyramid[-1], self.pyramid_shapes[i][:2]))
-            I2_pyramid.append(tf.image.resize(I2_pyramid[-1], self.pyramid_shapes[i][:2]))
+            # Bug fix: use bicubic interpolation for downsampling
+            I1_pyramid.append(tf.image.resize(I1_pyramid[-1], 
+                                              self.pyramid_shapes[i][:2], 
+                                              method=tf.image.ResizeMethod.BICUBIC
+                                              ))
+            I2_pyramid.append(tf.image.resize(I2_pyramid[-1],
+                                              self.pyramid_shapes[i][:2], 
+                                              method=tf.image.ResizeMethod.BICUBIC
+                                              ))
         
         # Process from coarse to fine
         for scale in reversed(range(self.nscales)):
