@@ -119,3 +119,60 @@ def tf_update_transform(p: tf.Tensor, dp: tf.Tensor, transform_type: TransformTy
 
     else:
         raise ValueError("Unsupported transformation type")
+
+
+@tf.function
+def tf_params2matrix(p: tf.Tensor, transform_type: TransformType) -> tf.Tensor:
+    """
+    Converts the given parameters `p` into a transformation matrix based on the specified `transform_type`.
+
+    Parameters:
+        p (tf.Tensor): The parameters for the transformation.
+        transform_type (TransformType): The type of transformation.
+
+    Returns:
+        tf.Tensor: A 3x3 transformation matrix.
+    """
+    dtype = p.dtype
+    one = tf.cast(1, dtype)
+    zero = tf.cast(0, dtype)
+    
+    if transform_type == TransformType.TRANSLATION:
+        matrix = tf.convert_to_tensor([
+            [one, zero, p[0]],
+            [zero, one, p[1]],
+            [zero, zero, one]
+        ], dtype=dtype)
+    
+    elif transform_type == TransformType.EUCLIDEAN:
+        matrix = tf.convert_to_tensor([
+            [tf.cos(p[2]), -tf.sin(p[2]), p[0]],
+            [tf.sin(p[2]),  tf.cos(p[2]), p[1]],
+            [zero,         zero,          one]
+        ], dtype=dtype)
+    
+    elif transform_type == TransformType.SIMILARITY:
+        matrix = tf.convert_to_tensor([
+            [one + p[2], -p[3],      p[0]],
+            [p[3],       one + p[2], p[1]],
+            [zero,       zero,       one]
+        ], dtype=dtype)
+    
+    elif transform_type == TransformType.AFFINITY:
+        matrix = tf.convert_to_tensor([
+            [one + p[2], p[3],       p[0]],
+            [p[4],       one + p[5],  p[1]],
+            [zero,       zero,        one]
+        ], dtype=dtype)
+    
+    elif transform_type == TransformType.HOMOGRAPHY:
+        matrix = tf.convert_to_tensor([
+            [one + p[0], p[1],      p[2]],
+            [p[3],       one + p[4], p[5]],
+            [p[6],       p[7],      one]
+        ], dtype=dtype)
+    
+    else:
+        raise ValueError("Unsupported transformation type")
+    
+    return matrix

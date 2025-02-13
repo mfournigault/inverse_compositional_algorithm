@@ -57,3 +57,35 @@ def tf_robust_error_function(
 
     return rho
 
+
+@tf.function
+def tf_steepest_descent_images(Ix: tf.Tensor, 
+                               Iy: tf.Tensor, 
+                               J: tf.Tensor) -> tf.Tensor:
+    """
+    Calculate the steepest descent images DI^t*J for optimization.
+    Args:
+        Ix (tf.Tensor): The gradient of the image along the x-axis with shape (b, ny, nx, nz).
+        Iy (tf.Tensor): The gradient of the image along the y-axis with shape (b, ny, nx, nz).
+        J (tf.Tensor): The Jacobian matrix with shape (b, ny, nx, 2*m), where m = nparams/2.
+    Returns:
+        tf.Tensor: The steepest descent images with shape (b, ny, nx, nz, m).
+    """
+    Jx, Jy = tf.split(J, num_or_size_splits=2, axis=-1)  # Chaque tenseur a la taille (b, ny, nx, m)
+
+    # Expand Ix and Iy along the last dimension to be able to multiply with Jx and Jy.
+    Ix_exp = tf.expand_dims(Ix, axis=-1)  # (b, ny, nx, nz, 1)
+    Iy_exp = tf.expand_dims(Iy, axis=-1)  # (b, ny, nx, nz, 1)
+
+    # Reshape Jx et Jy to get a "duplicate" for nz.
+    Jx_exp = tf.expand_dims(Jx, axis=2)  # (b, ny, 1, nx, m) 
+    Jy_exp = tf.expand_dims(Jy, axis=2)  # (b, ny, 1, nx, m)
+
+    Jx_exp = tf.reshape(Jx, [tf.shape(Jx)[0], tf.shape(Jx)[1], tf.shape(Jx)[2], 1, tf.shape(Jx)[3]])
+    Jy_exp = tf.reshape(Jy, [tf.shape(Jy)[0], tf.shape(Jy)[1], tf.shape(Jy)[2], 1, tf.shape(Jy)[3]])
+
+    # DIJ is defined by the sum of the two contributions
+    DIJ = Ix_exp * Jx_exp + Iy_exp * Jy_exp  # (b, ny, nx, nz, m)
+
+    return DIJ
+
