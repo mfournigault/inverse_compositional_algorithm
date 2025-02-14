@@ -7,12 +7,10 @@ import image_optimisation as io
 import transformation as tr
 import constants as cts
 import zoom as zm
-import bicubic_interpolation as bi
 
 from tf_image_optimisation import tf_robust_error_function, tf_steepest_descent_images
-from tf_bicubic_interpolation import bicubic_sampler
-from tf_transformation import tf_update_transform, tf_params2matrix
-from tf_derivatives import tf_jacobian
+from tf_transformation import tf_update_transform, tf_params2matrix, tf_warp_image
+from tf_derivatives import tf_jacobian, tf_compute_gradients
 
 import imageio
 
@@ -74,9 +72,6 @@ class InverseCompositional(Layer):
         Methods:
         __init__(self, transform_type: tr.TransformType, ...)
         build(self, input_shape)
-        compute_gradients(self, I1)
-        warp_image(self, I2, p)
-        transformed_grid(self, p)
         call(self, inputs)
     """
     def __init__(
@@ -108,7 +103,7 @@ class InverseCompositional(Layer):
             Additional keyword arguments.
         """
         
-        super(RobustInverseCompositional, self).__init__(trainable=False, **kwargs)
+        super(InverseCompositional, self).__init__(trainable=False, **kwargs)
         self.transform_type = transform_type
         self.nparams = self.transform_type.nparams()
         self.TOL = TOL
@@ -129,95 +124,6 @@ class InverseCompositional(Layer):
         """
         self.batch_size = input_shape[0][0]
         self.ny, self.nx, self.nz = input_shape[0][1:4]
-
-    @tf.function    
-    def compute_gradients(self, I1):
-        """
-        Computes the gradients of the input image tensor I1 along the x and y axes.
-
-        Args:
-            I1 (tf.Tensor): A 4D tensor representing the input image with shape 
-                            (batch_size, height, width, channels).
-
-        Returns:
-            tuple: A tuple containing two 4D tensors:
-                - Ix (tf.Tensor): The gradient of the input image along the x-axis.
-                - Iy (tf.Tensor): The gradient of the input image along the y-axis.
-        """
-        Ix = tf.zeros_like(I1)
-        Iy = tf.zeros_like(I1)
-        Ix = (I1[:, :, 2:, :] - I1[:, :, :-2, :]) * 0.5
-        Ix = tf.pad(Ix, [[0,0], [0,0], [1,1], [0,0]])
-        Iy = (I1[:, 2:, :, :] - I1[:, :-2, :, :]) * 0.5
-        Iy = tf.pad(Iy, [[0,0], [1,1], [0,0], [0,0]])
-        return Ix, Iy
-
-    #TODO: centralize the definition of warp_image in a module
-    @tf.function
-    def warp_image(self, I2, p):
-        """
-        Warps the input image I2 according to the transformation parameters p.
-        Parameters:
-        -----------
-        I2 : tf.Tensor
-            The input image tensor to be warped. Expected shape is [batch, height, width, channels].
-        p : tf.Tensor
-            The transformation parameters tensor.
-        Returns:
-        --------
-        tf.Tensor
-            The warped image tensor with the same shape as I2, where the transformation has been applied.
-            Pixels outside the valid region are set to NaN.
-        Raises:
-        -------
-        ValueError
-            If the transformation type is not supported.
-        """
-        if self.transform_type in [tr.TransformType.TRANSLATION,
-                                   tr.TransformType.EUCLIDEAN,
-                                   tr.TransformType.SIMILARITY,
-                                   tr.TransformType.AFFINITY, 
-                                   tr.TransformType.HOMOGRAPHY]:
-            grid = self.transformed_grid(p)  # grid with shape [batch, self.ny, self.nx, 2]
-            warped = bicubic_sampler(I2, grid)
-            grid_int = tf.cast(tf.round(grid), tf.int32)
-
-            # Define a mask to set pixels outside the valid region to NaN
-            mask = tf.logical_and(
-                        tf.logical_and(grid_int[:, 0, :, :] >= self.delta, 
-                                       grid_int[:, 0, :, :] <= I2.shape[2]-self.delta),
-                        tf.logical_and(grid_int[:, 1, :, :] >= self.delta, 
-                                       grid_int[:, 1, :, :] <= I2.shape[1]-self.delta)
-                    )
-            mask = tf.expand_dims(mask, axis=-1)
-            warped = tf.where(mask == False,
-                              tf.constant(float('nan'), dtype=I2.dtype),
-                              warped)
-            return warped
-        else:
-            raise ValueError("Unsupported transformation type")
-
-    #TODO: centralize the definition of transformed_grid in a module
-    @tf.function
-    def transformed_grid(self, p):
-        """
-        Transforms a grid of coordinates using a batch of affine transformation parameters.
-        Args:
-            p (tf.Tensor): A tensor of shape (batch_size, num_params) containing the affine transformation parameters for each element in the batch.
-        Returns:
-            tf.Tensor: A tensor of shape (batch_size, 3, nx, ny) containing the transformed grid coordinates for each element in the batch.
-        """
-        x = tf.linspace(0.0, self.nx-1, self.nx)
-        y = tf.linspace(0.0, self.ny-1, self.ny)
-        X, Y = tf.meshgrid(x, y)
-        ones = tf.ones_like(X)
-        coords = tf.stack([X, Y, ones], axis=0)
-        # Use of map_fn to apply the function params2matrix to each element of p (batch of parameters)
-        #TODO: create a specific TF version of the function params2matrix
-        affine_matrix = tf.map_fn(lambda params: tf_params2matrix(params, self.transform_type), p, dtype=tf.float32)
-        transformed = tf.einsum('bij,jhw->bihw', affine_matrix, coords)
-        
-        return transformed
 
     @tf.function
     def call(self, inputs):
@@ -252,8 +158,7 @@ class InverseCompositional(Layer):
         
         J = tf_jacobian(self.transform_type, self.nx, self.ny)
 
-        #TODO: centralize the definition of compute_gradients in a module
-        Ix, Iy = self.compute_gradients(I1)
+        Ix, Iy = tf_compute_gradients(I1)
         # Like in the modified version of the algorithm, we discard boundary pixels
         if (self.nanifoutside is True and self.delta > 0):
             Ix = mark_boundaries_as_nan(Ix, self.delta)
@@ -270,7 +175,7 @@ class InverseCompositional(Layer):
         @tf.function
         def body(i, p, error, DI_init, Iw_init):
             # Warp I2 with current parameters
-            Iw = self.warp_image(I2, p)
+            Iw = tf_warp_image(I2, self.transform_type, p, self.delta)
             DI = Iw - I1
 
             DI_filled = tf.where(tf.keras.ops.isfinite(DI), DI, 0)
@@ -311,7 +216,7 @@ class InverseCompositional(Layer):
 
         i = tf.constant(0)
         error = tf.constant(1e10, dtype=tf.float32)
-        Iw_init = self.warp_image(I2, p)
+        Iw_init = tf_warp_image(I2, self.transform_type, p, self.delta)
         DI_init = Iw_init - I1
 
         i, p_final, final_error, DI_final, Iw_final = tf.while_loop(
@@ -351,9 +256,6 @@ class RobustInverseCompositional(Layer):
         Methods:
         __init__(self, transform_type: tr.TransformType, ...)
         build(self, input_shape)
-        compute_gradients(self, I1)
-        warp_image(self, I2, p)
-        transformed_grid(self, p)
         call(self, inputs)
     """
     def __init__(
@@ -416,93 +318,6 @@ class RobustInverseCompositional(Layer):
         self.batch_size = input_shape[0][0]
         self.ny, self.nx, self.nz = input_shape[0][1:4]
 
-    @tf.function    
-    def compute_gradients(self, I1):
-        """
-        Computes the gradients of the input image tensor I1 along the x and y axes.
-
-        Args:
-            I1 (tf.Tensor): A 4D tensor representing the input image with shape 
-                            (batch_size, height, width, channels).
-
-        Returns:
-            tuple: A tuple containing two 4D tensors:
-                - Ix (tf.Tensor): The gradient of the input image along the x-axis.
-                - Iy (tf.Tensor): The gradient of the input image along the y-axis.
-        """
-        Ix = tf.zeros_like(I1)
-        Iy = tf.zeros_like(I1)
-        Ix = (I1[:, :, 2:, :] - I1[:, :, :-2, :]) * 0.5
-        Ix = tf.pad(Ix, [[0,0], [0,0], [1,1], [0,0]])
-        Iy = (I1[:, 2:, :, :] - I1[:, :-2, :, :]) * 0.5
-        Iy = tf.pad(Iy, [[0,0], [1,1], [0,0], [0,0]])
-        return Ix, Iy
-
-    @tf.function
-    def warp_image(self, I2, p):
-        """
-        Warps the input image I2 according to the transformation parameters p.
-        Parameters:
-        -----------
-        I2 : tf.Tensor
-            The input image tensor to be warped. Expected shape is [batch, height, width, channels].
-        p : tf.Tensor
-            The transformation parameters tensor.
-        Returns:
-        --------
-        tf.Tensor
-            The warped image tensor with the same shape as I2, where the transformation has been applied.
-            Pixels outside the valid region are set to NaN.
-        Raises:
-        -------
-        ValueError
-            If the transformation type is not supported.
-        """
-        if self.transform_type in [tr.TransformType.TRANSLATION,
-                                   tr.TransformType.EUCLIDEAN,
-                                   tr.TransformType.SIMILARITY,
-                                   tr.TransformType.AFFINITY, 
-                                   tr.TransformType.HOMOGRAPHY]:
-            grid = self.transformed_grid(p)  # grid with shape [batch, self.ny, self.nx, 2]
-            warped = bicubic_sampler(I2, grid)
-            grid_int = tf.cast(tf.round(grid), tf.int32)
-
-            # Define a mask to set pixels outside the valid region to NaN
-            mask = tf.logical_and(
-                        tf.logical_and(grid_int[:, 0, :, :] >= self.delta, 
-                                       grid_int[:, 0, :, :] <= I2.shape[2]-self.delta),
-                        tf.logical_and(grid_int[:, 1, :, :] >= self.delta, 
-                                       grid_int[:, 1, :, :] <= I2.shape[1]-self.delta)
-                    )
-            mask = tf.expand_dims(mask, axis=-1)
-            warped = tf.where(mask == False,
-                              tf.constant(float('nan'), dtype=I2.dtype),
-                              warped)
-            return warped
-        else:
-            raise ValueError("Unsupported transformation type")
-
-    @tf.function
-    def transformed_grid(self, p):
-        """
-        Transforms a grid of coordinates using a batch of affine transformation parameters.
-        Args:
-            p (tf.Tensor): A tensor of shape (batch_size, num_params) containing the affine transformation parameters for each element in the batch.
-        Returns:
-            tf.Tensor: A tensor of shape (batch_size, 3, nx, ny) containing the transformed grid coordinates for each element in the batch.
-        """
-        x = tf.linspace(0.0, self.nx-1, self.nx)
-        y = tf.linspace(0.0, self.ny-1, self.ny)
-        X, Y = tf.meshgrid(x, y)
-        ones = tf.ones_like(X)
-        coords = tf.stack([X, Y, ones], axis=0)
-        # Use of map_fn to apply the function params2matrix to each element of p (batch of parameters)
-        #TODO: create a specific TF version of the function params2matrix
-        affine_matrix = tf.map_fn(lambda params: tf_params2matrix(params, self.transform_type), p, dtype=tf.float32)
-        transformed = tf.einsum('bij,jhw->bihw', affine_matrix, coords)
-        
-        return transformed
-
     @tf.function
     def call(self, inputs):
         """
@@ -534,7 +349,7 @@ class RobustInverseCompositional(Layer):
         if I2.dtype != tf.float32:
             I2 = tf.cast(I2, tf.float32)
         J = tf_jacobian(self.transform_type, self.nx, self.ny)
-        Ix, Iy = self.compute_gradients(I1)
+        Ix, Iy = tf_compute_gradients(I1)
         # Like in the modified version of the algorithm, we discard boundary pixels
         if (self.nanifoutside is True and self.delta > 0):
             Ix = mark_boundaries_as_nan(Ix, self.delta)
@@ -545,7 +360,7 @@ class RobustInverseCompositional(Layer):
         @tf.function
         def body(i, p, error, DI_init, Iw_init):
             # Warp I2 with current parameters
-            Iw = self.warp_image(I2, p)
+            Iw = tf_warp_image(I2, self.transform_type, p, self.delta)
             DI = Iw - I1
 
             # Compute robust error
@@ -605,7 +420,7 @@ class RobustInverseCompositional(Layer):
 
         i = tf.constant(0)
         error = tf.constant(1e10, dtype=tf.float32)
-        Iw_init = self.warp_image(I2, p)
+        Iw_init = tf_warp_image(I2, self.transform_type, p, self.delta)
         DI_init = Iw_init - I1
 
         i, p_final, final_error, DI_final, Iw_final = tf.while_loop(
@@ -634,17 +449,29 @@ class PyramidalInverseCompositional(Layer):
         self.nu = nu
         self.transform_type = transform_type
         self.verbose = verbose
-        self.ric_layers = [RobustInverseCompositional(
+
+        if robust_type == io.RobustErrorFunctionType.QUADRATIC:
+            self.ic_layers = [InverseCompositional(
                                 transform_type,
                                 TOL,
-                                robust_type,
-                                lambda_,
                                 nanifoutside,
                                 delta,
                                 verbose,
                                 cts.MAX_ITER,
-                                name=f"RIC_{s}",
+                                name=f"IC_{s}",
                                 **kwargs) for s in range(nscales)]
+        else:
+            self.ic_layers = [RobustInverseCompositional(
+                                    transform_type,
+                                    TOL,
+                                    robust_type,
+                                    lambda_,
+                                    nanifoutside,
+                                    delta,
+                                    verbose,
+                                    cts.MAX_ITER,
+                                    name=f"RIC_{s}",
+                                    **kwargs) for s in range(nscales)]
 
     def build(self, input_shape):
         self.pyramid_shapes = []
@@ -683,9 +510,9 @@ class PyramidalInverseCompositional(Layer):
         for scale in reversed(range(self.nscales)):
             if self.verbose:
                 tf.print(f"Scale: {scale}")
-            ric_layer = self.ric_layers[scale]
+            ic_layer = self.ic_layers[scale]
             # print("shape of p[scale]: ", p[scale].shape)
-            p_scale, error, DI, Iw = ric_layer([I1_pyramid[scale], I2_pyramid[scale], p[scale]])
+            p_scale, error, DI, Iw = ic_layer([I1_pyramid[scale], I2_pyramid[scale], p[scale]])
             p[scale] = p_scale
 
             # Upscale parameters for next scale
@@ -703,14 +530,3 @@ class PyramidalInverseCompositional(Layer):
 
         return p, error, DI, Iw
 
-    def upscale_parameters(self, p, old_shape, new_shape):
-        # Implement parameter upscaling logic based on transform type
-        scale_factor = (new_shape[0]/old_shape[0], new_shape[1]/old_shape[1])
-        if self.transform_type == TransformType.AFFINE:
-            # Scale translation parameters
-            scaled_p = p * tf.constant([scale_factor[1], scale_factor[0], 
-                                      scale_factor[1], scale_factor[0], 
-                                      1.0, 1.0], dtype=tf.float32)
-            return scaled_p
-        # Add other transform types as needed
-        return p

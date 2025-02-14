@@ -1,5 +1,143 @@
 import tensorflow as tf
+
 from transformation import TransformType
+from tf_bicubic_interpolation import bicubic_sampler
+
+
+@tf.function
+def tf_params2matrix(p: tf.Tensor, transform_type: TransformType) -> tf.Tensor:
+    """
+    Converts the given parameters `p` into a transformation matrix based on the specified `transform_type`.
+
+    Parameters:
+        p (tf.Tensor): The parameters for the transformation.
+        transform_type (TransformType): The type of transformation.
+
+    Returns:
+        tf.Tensor: A 3x3 transformation matrix.
+    """
+    dtype = p.dtype
+    one = tf.cast(1, dtype)
+    zero = tf.cast(0, dtype)
+    
+    if transform_type == TransformType.TRANSLATION:
+        matrix = tf.convert_to_tensor([
+            [one, zero, p[0]],
+            [zero, one, p[1]],
+            [zero, zero, one]
+        ], dtype=dtype)
+    
+    elif transform_type == TransformType.EUCLIDEAN:
+        matrix = tf.convert_to_tensor([
+            [tf.cos(p[2]), -tf.sin(p[2]), p[0]],
+            [tf.sin(p[2]),  tf.cos(p[2]), p[1]],
+            [zero,         zero,          one]
+        ], dtype=dtype)
+    
+    elif transform_type == TransformType.SIMILARITY:
+        matrix = tf.convert_to_tensor([
+            [one + p[2], -p[3],      p[0]],
+            [p[3],       one + p[2], p[1]],
+            [zero,       zero,       one]
+        ], dtype=dtype)
+    
+    elif transform_type == TransformType.AFFINITY:
+        matrix = tf.convert_to_tensor([
+            [one + p[2], p[3],       p[0]],
+            [p[4],       one + p[5],  p[1]],
+            [zero,       zero,        one]
+        ], dtype=dtype)
+    
+    elif transform_type == TransformType.HOMOGRAPHY:
+        matrix = tf.convert_to_tensor([
+            [one + p[0], p[1],      p[2]],
+            [p[3],       one + p[4], p[5]],
+            [p[6],       p[7],      one]
+        ], dtype=dtype)
+    
+    else:
+        raise ValueError("Unsupported transformation type")
+    
+    return matrix
+
+
+@tf.function
+def tf_transformed_grid(
+            batch_size: int, 
+            ny: int,
+            nx: int, 
+            transform_type: TransformType, 
+            p: tf.Tensor) -> tf.Tensor:
+    """
+    Transforms a grid of coordinates using a batch of affine transformation parameters.
+    Args:
+        batch_size (int): The number of elements in the batch.
+        ny (int): The number of rows in the grid.
+        nx (int): The number of columns in the grid.
+        transform_type (TransformType): The type of geometric transformation.
+        p (tf.Tensor): A tensor of shape (batch_size, num_params) containing the affine 
+        transformation parameters for each element in the batch.
+    Returns:
+        tf.Tensor: A tensor of shape (batch_size, 3, nx, ny) containing the transformed 
+        grid coordinates for each element in the batch.
+    """
+    x = tf.linspace(0.0, nx-1, nx)
+    y = tf.linspace(0.0, ny-1, ny)
+    X, Y = tf.meshgrid(x, y)
+    ones = tf.ones_like(X)
+    coords = tf.stack([X, Y, ones], axis=0)
+
+    affine_matrix = tf.map_fn(lambda params: tf_params2matrix(params, transform_type), p, dtype=tf.float32)
+    transformed = tf.einsum('bij,jhw->bihw', affine_matrix, coords)
+
+    return transformed
+
+
+@tf.function
+def tf_warp_image(I2: tf.Tensor, transform_type: TransformType, p: tf.Tensor, delta: int) -> tf.Tensor:
+    """
+    Warps the input image I2 according to the transformation parameters p.
+    Parameters:
+    -----------
+    I2 : tf.Tensor
+        The input image tensor to be warped. Expected shape is [batch, height, width, channels].
+    transform_type : the geometric transformation type.
+    p : tf.Tensor
+        The transformation parameters tensor.
+    Returns:
+    --------
+    tf.Tensor
+        The warped image tensor with the same shape as I2, where the transformation has been applied.
+        Pixels outside the valid region are set to NaN.
+    Raises:
+    -------
+    ValueError
+        If the transformation type is not supported.
+    """
+    if transform_type in [TransformType.TRANSLATION,
+                          TransformType.EUCLIDEAN,
+                          TransformType.SIMILARITY,
+                          TransformType.AFFINITY, 
+                          TransformType.HOMOGRAPHY]:
+        batch_size, ny, nx, _ = I2.shape
+        grid = tf_transformed_grid(batch_size, ny, nx, transform_type, p)  # grid with shape [batch, ny, nx, 2]
+        warped = bicubic_sampler(I2, grid)
+        grid_int = tf.cast(tf.round(grid), tf.int32)
+
+        # Define a mask to set pixels outside the valid region to NaN
+        mask = tf.logical_and(
+                    tf.logical_and(grid_int[:, 0, :, :] >= delta, 
+                                   grid_int[:, 0, :, :] <= I2.shape[2]-delta),
+                    tf.logical_and(grid_int[:, 1, :, :] >= delta, 
+                                   grid_int[:, 1, :, :] <= I2.shape[1]-delta)
+                )
+        mask = tf.expand_dims(mask, axis=-1)
+        warped = tf.where(mask == False,
+                          tf.constant(float('nan'), dtype=I2.dtype),
+                          warped)
+        return warped
+    else:
+        raise ValueError("Unsupported transformation type")
 
 @tf.function
 def tf_update_transform(p: tf.Tensor, dp: tf.Tensor, transform_type: TransformType) -> tf.Tensor:
@@ -121,58 +259,3 @@ def tf_update_transform(p: tf.Tensor, dp: tf.Tensor, transform_type: TransformTy
         raise ValueError("Unsupported transformation type")
 
 
-@tf.function
-def tf_params2matrix(p: tf.Tensor, transform_type: TransformType) -> tf.Tensor:
-    """
-    Converts the given parameters `p` into a transformation matrix based on the specified `transform_type`.
-
-    Parameters:
-        p (tf.Tensor): The parameters for the transformation.
-        transform_type (TransformType): The type of transformation.
-
-    Returns:
-        tf.Tensor: A 3x3 transformation matrix.
-    """
-    dtype = p.dtype
-    one = tf.cast(1, dtype)
-    zero = tf.cast(0, dtype)
-    
-    if transform_type == TransformType.TRANSLATION:
-        matrix = tf.convert_to_tensor([
-            [one, zero, p[0]],
-            [zero, one, p[1]],
-            [zero, zero, one]
-        ], dtype=dtype)
-    
-    elif transform_type == TransformType.EUCLIDEAN:
-        matrix = tf.convert_to_tensor([
-            [tf.cos(p[2]), -tf.sin(p[2]), p[0]],
-            [tf.sin(p[2]),  tf.cos(p[2]), p[1]],
-            [zero,         zero,          one]
-        ], dtype=dtype)
-    
-    elif transform_type == TransformType.SIMILARITY:
-        matrix = tf.convert_to_tensor([
-            [one + p[2], -p[3],      p[0]],
-            [p[3],       one + p[2], p[1]],
-            [zero,       zero,       one]
-        ], dtype=dtype)
-    
-    elif transform_type == TransformType.AFFINITY:
-        matrix = tf.convert_to_tensor([
-            [one + p[2], p[3],       p[0]],
-            [p[4],       one + p[5],  p[1]],
-            [zero,       zero,        one]
-        ], dtype=dtype)
-    
-    elif transform_type == TransformType.HOMOGRAPHY:
-        matrix = tf.convert_to_tensor([
-            [one + p[0], p[1],      p[2]],
-            [p[3],       one + p[4], p[5]],
-            [p[6],       p[7],      one]
-        ], dtype=dtype)
-    
-    else:
-        raise ValueError("Unsupported transformation type")
-    
-    return matrix

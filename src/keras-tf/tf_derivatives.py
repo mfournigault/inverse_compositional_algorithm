@@ -2,6 +2,30 @@ import tensorflow as tf
 
 from transformation import TransformType
 
+@tf.function    
+def tf_compute_gradients(I1: tf.Tensor) -> (tf.Tensor, tf.Tensor):
+    """
+    By using the central difference, computes the gradients of the input image
+    tensor I1 along the x and y axes.
+
+    Args:
+        I1 (tf.Tensor): A 4D tensor representing the input image with shape 
+                        (batch_size, height, width, channels).
+
+    Returns:
+        tuple: A tuple containing two 4D tensors:
+            - Ix (tf.Tensor): The gradient of the input image along the x-axis.
+            - Iy (tf.Tensor): The gradient of the input image along the y-axis.
+    """
+    Ix = tf.zeros_like(I1)
+    Iy = tf.zeros_like(I1)
+    Ix = (I1[:, :, 2:, :] - I1[:, :, :-2, :]) * 0.5
+    Ix = tf.pad(Ix, [[0,0], [0,0], [1,1], [0,0]])
+    Iy = (I1[:, 2:, :, :] - I1[:, :-2, :, :]) * 0.5
+    Iy = tf.pad(Iy, [[0,0], [1,1], [0,0], [0,0]])
+    return Ix, Iy
+
+
 @tf.function
 def tf_jacobian(
             transform_type: TransformType,
