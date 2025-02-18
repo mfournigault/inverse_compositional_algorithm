@@ -9,7 +9,7 @@ import constants as cts
 import zoom as zm
 
 from tf_image_optimisation import tf_robust_error_function, tf_steepest_descent_images
-from tf_transformation import tf_update_transform, tf_params2matrix, tf_warp_image
+from tf_transformation import tf_update_transform, tf_params2matrix, tf_warp_image, tf_nparams
 from tf_derivatives import tf_jacobian, tf_compute_gradients
 
 import imageio
@@ -104,13 +104,14 @@ class InverseCompositional(Layer):
         """
         
         super(InverseCompositional, self).__init__(trainable=False, **kwargs)
-        self.transform_type = transform_type
-        self.nparams = self.transform_type.nparams()
-        self.TOL = TOL
-        self.nanifoutside = nanifoutside
-        self.delta = delta
-        self.verbose = verbose
-        self.max_iter = max_iter
+        # We substract 1 to transform_type because the value of the enum starts at 1
+        # and tf.switch_case starts at 0
+        self.transform_type = tf.constant(transform_type.value-1, dtype=tf.int32)
+        self.TOL = tf.constant(TOL, dtype=tf.float32)
+        self.nanifoutside = tf.constant(nanifoutside, dtype=tf.bool)
+        self.delta = tf.constant(delta, dtype=tf.int32)
+        self.verbose = tf.constant(verbose, dtype=tf.bool)
+        self.max_iter = tf.constant(max_iter, dtype=tf.int32)
 
     def build(self, input_shape):
         """
@@ -125,7 +126,7 @@ class InverseCompositional(Layer):
         self.batch_size = input_shape[0][0]
         self.ny, self.nx, self.nz = input_shape[0][1:4]
 
-    @tf.function
+    @tf.function(reduce_retracing=True)
     def call(self, inputs):
         """
         Perform the inverse compositional algorithm on the input images.
@@ -172,7 +173,7 @@ class InverseCompositional(Layer):
         H = tf.einsum("bhwnc,bhwcm->bnm", DIJt, DIJ_filled)
         H_inv = tf.linalg.inv(H)
 
-        @tf.function
+        # @tf.function
         def body(i, p, error, DI_init, Iw_init):
             # Warp I2 with current parameters
             Iw = tf_warp_image(I2, self.transform_type, p, self.delta)
@@ -191,7 +192,7 @@ class InverseCompositional(Layer):
             updated_params = tf.map_fn(
                 lambda x: tf_update_transform(x[0], x[1], self.transform_type),
                 (p, dp),
-                dtype=tf.float32
+                fn_output_signature=tf.TensorSpec(shape=[None], dtype=tf.float32)
             )
             p = updated_params
             
@@ -199,9 +200,8 @@ class InverseCompositional(Layer):
                 for b in range(self.batch_size):
                     # tf.print(f"--- Batch {b}")
                     tf.print(f"|Dp|={error}: p=(", end="")
-                    for i in range(self.nparams - 1):
+                    for i in range(tf_nparams(self.transform_type) - 1):
                         tf.print(f"{p[b][i]} ", end="")
-                    tf.print(f"{p[b][self.nparams - 1]}), lambda_={self.lambda_it}")
 
             return i+1, p, error, DI, Iw
         
@@ -222,7 +222,14 @@ class InverseCompositional(Layer):
         i, p_final, final_error, DI_final, Iw_final = tf.while_loop(
             cond, body, (i, p, error, DI_init, Iw_init),
             parallel_iterations=1,
-            maximum_iterations=self.max_iter)
+            maximum_iterations=self.max_iter,
+            shape_invariants=(
+                tf.TensorShape([]),                      # i is scalair
+                tf.TensorShape([None, None]),              # p: batch_size,  nparams 
+                tf.TensorShape([]),                      # error is scalar
+                tf.TensorShape(None),  # DI: batch, H, W, C
+                tf.TensorShape(None)   # Iw: batch, H, W, C
+            ))
         
         return p_final, final_error, DI_final, Iw_final
 
@@ -294,16 +301,17 @@ class RobustInverseCompositional(Layer):
         """
         
         super(RobustInverseCompositional, self).__init__(trainable=False, **kwargs)
-        self.transform_type = transform_type
-        self.nparams = self.transform_type.nparams()
-        self.TOL = TOL
-        self.robust_type = robust_type
-        self.lambda_ = lambda_
-        self.lambda_it = lambda_ if lambda_ > 0 else cts.LAMBDA_0
-        self.nanifoutside = nanifoutside
-        self.delta = delta
-        self.verbose = verbose
-        self.max_iter = max_iter
+        # We substract 1 to transform_type because the value of the enum starts at 1
+        # and tf.switch_case starts at 0
+        self.transform_type = tf.constant(transform_type.value-1, dtype=tf.int32)
+        self.TOL = tf.constant(TOL, dtype=tf.float32)
+        self.nanifoutside = tf.constant(nanifoutside, dtype=tf.bool)
+        self.delta = tf.constant(delta, dtype=tf.int32)
+        self.verbose = tf.constant(verbose, dtype=tf.bool)
+        self.max_iter = tf.constant(max_iter, dtype=tf.int32)
+        self.robust_type = tf.constant(robust_type.value, dtype=tf.int32)
+        self.lambda_ = tf.constant(lambda_, dtype=tf.float32)
+        self.lambda_it = lambda_ if lambda_ > 0 else tf.constant(cts.LAMBDA_0, dtype=tf.float32)
 
     def build(self, input_shape):
         """
@@ -318,7 +326,7 @@ class RobustInverseCompositional(Layer):
         self.batch_size = input_shape[0][0]
         self.ny, self.nx, self.nz = input_shape[0][1:4]
 
-    @tf.function
+    @tf.function(reduce_retracing=True)
     def call(self, inputs):
         """
         Perform the inverse compositional algorithm on the input images.
@@ -348,7 +356,9 @@ class RobustInverseCompositional(Layer):
             I1 = tf.cast(I1, tf.float32)
         if I2.dtype != tf.float32:
             I2 = tf.cast(I2, tf.float32)
+
         J = tf_jacobian(self.transform_type, self.nx, self.ny)
+
         Ix, Iy = tf_compute_gradients(I1)
         # Like in the modified version of the algorithm, we discard boundary pixels
         if (self.nanifoutside is True and self.delta > 0):
@@ -357,7 +367,7 @@ class RobustInverseCompositional(Layer):
         
         DIJ = tf_steepest_descent_images(Ix, Iy, J)
         
-        @tf.function
+        # @tf.function
         def body(i, p, error, DI_init, Iw_init):
             # Warp I2 with current parameters
             Iw = tf_warp_image(I2, self.transform_type, p, self.delta)
@@ -367,7 +377,7 @@ class RobustInverseCompositional(Layer):
             rho = tf.map_fn(
                 lambda x: tf_robust_error_function(x, self.lambda_it, self.robust_type),
                 DI,
-                dtype=tf.float32
+                fn_output_signature=tf.TensorSpec(shape=[None, None], dtype=tf.float32)
             )
             # rho = tf_robust_error_function(DI, self.lambda_it, self.robust_type)
             
@@ -395,7 +405,7 @@ class RobustInverseCompositional(Layer):
             updated_params = tf.map_fn(
                 lambda x: tf_update_transform(x[0], x[1], self.transform_type),
                 (p, dp),
-                dtype=tf.float32
+                fn_output_signature=tf.TensorSpec(shape=[None], dtype=tf.float32)
             )
             p = updated_params
             
@@ -403,9 +413,9 @@ class RobustInverseCompositional(Layer):
                 for b in range(self.batch_size):
                     # tf.print(f"--- Batch {b}")
                     tf.print(f"|Dp|={error}: p=(", end="")
-                    for i in range(self.nparams - 1):
+                    for i in range(tf_nparams(self.transform_type) - 1):
                         tf.print(f"{p[b][i]} ", end="")
-                    tf.print(f"{p[b][self.nparams - 1]}), lambda_={self.lambda_it}")
+                    tf.print(f"{p[b][tf_nparams(self.transform_type) - 1]}), lambda_={self.lambda_it}")
 
             return i+1, p, error, DI, Iw
         
@@ -426,7 +436,14 @@ class RobustInverseCompositional(Layer):
         i, p_final, final_error, DI_final, Iw_final = tf.while_loop(
             cond, body, (i, p, error, DI_init, Iw_init),
             parallel_iterations=1,
-            maximum_iterations=self.max_iter)
+            maximum_iterations=self.max_iter,
+            shape_invariants=(
+                tf.TensorShape([]),                      # i is scalair
+                tf.TensorShape([None, None]),              # p: batch_size,  nparams 
+                tf.TensorShape([]),                      # error is scalar
+                tf.TensorShape(None),  # DI: batch, H, W, C
+                tf.TensorShape(None)   # Iw: batch, H, W, C
+            ))
         
         return p_final, final_error, DI_final, Iw_final
 

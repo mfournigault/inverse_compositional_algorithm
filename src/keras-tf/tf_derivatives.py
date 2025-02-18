@@ -1,8 +1,7 @@
 import tensorflow as tf
 
-from transformation import TransformType
 
-@tf.function    
+# @tf.function(input_signature=(tf.TensorSpec(shape=[None, None, None, None], dtype=tf.float32),))
 def tf_compute_gradients(I1: tf.Tensor) -> (tf.Tensor, tf.Tensor):
     """
     By using the central difference, computes the gradients of the input image
@@ -26,11 +25,14 @@ def tf_compute_gradients(I1: tf.Tensor) -> (tf.Tensor, tf.Tensor):
     return Ix, Iy
 
 
-@tf.function
-def tf_jacobian(
-            transform_type: TransformType,
-            nx: int,
-            ny: int) -> tf.Tensor:
+# @tf.function(
+#     input_signature=[
+#         tf.TensorSpec(shape=[], dtype=tf.int32),  # transform_type value as int
+#         tf.TensorSpec(shape=[], dtype=tf.int32),  # nx
+#         tf.TensorSpec(shape=[], dtype=tf.int32)   # ny
+#     ]
+# )
+def tf_jacobian(transform_type_value, nx, ny) -> tf.Tensor:    
     """
     Compute the Jacobian matrix for the specified transformation type.
 
@@ -42,9 +44,9 @@ def tf_jacobian(
     - AFFINITY
     - HOMOGRAPHY
     Args:
-        transform_type (TransformType): The type of transformation.
-        nx (int): The number of columns in the image grid.
-        ny (int): The number of rows in the image grid.
+        transform_type_value (tf.Tensor): An integer tensor representing the transformation type.
+        nx (tf.Tensor): The number of columns in the image grid.
+        ny (tf.Tensor): The number of rows in the image grid.
 
     Returns:
         tf.Tensor: A tensor representing the Jacobian matrix with an added 
@@ -55,18 +57,32 @@ def tf_jacobian(
     X, Y = tf.meshgrid(x, y)
     ones = tf.ones_like(X)
     zeros = tf.zeros_like(X)
-    if transform_type == TransformType.TRANSLATION:
-        J = tf.stack([ones, zeros, zeros, ones], axis=-1)
-    elif transform_type == TransformType.EUCLIDEAN:
-        J = tf.stack([ones, zeros, -Y, zeros, ones, X], axis=-1)
-    elif transform_type == TransformType.SIMILARITY:
-        J = tf.stack([ones, zeros, X, -Y, zeros, ones, Y, X], axis=-1)
-    elif transform_type == TransformType.AFFINITY:
-        J = tf.stack([ones, zeros, X, Y, zeros, zeros, zeros, ones, zeros, zeros, X, Y], axis=-1)
-    elif transform_type == TransformType.HOMOGRAPHY:
-        J = tf.stack([X, Y, ones, zeros, zeros, zeros, -X*X, -X*Y, zeros, zeros, zeros, X, Y, ones, -X*Y, -Y*Y], axis=-1)
-    else:
-        raise ValueError("Unsupported transformation type")
     
+    def jac_translation():
+        return tf.stack([ones, zeros, zeros, ones], axis=-1)
+    def jac_euclidean():
+        return tf.stack([ones, zeros, -Y, zeros, ones, X], axis=-1)
+    def jac_similarity():
+        return tf.stack([ones, zeros, X, -Y, zeros, ones, Y, X], axis=-1)
+    def jac_affinity():
+        return tf.stack([ones, zeros, X, Y, zeros, zeros, zeros, ones, zeros, zeros, X, Y], axis=-1)
+    def jac_homography():
+        return tf.stack([X, Y, ones,
+                         zeros, zeros, zeros,
+                         -X*X, -X*Y,
+                         zeros, zeros, zeros,
+                         X, Y, ones,
+                         -X*Y, -Y*Y], axis=-1)
+    
+    branch_fns = {
+        0: jac_translation,
+        1: jac_euclidean,
+        2: jac_similarity,
+        3: jac_affinity,
+        4: jac_homography,
+    }
+    
+    # Use the integer tensor directly with tf.switch_case:
+    J = tf.switch_case(branch_index=transform_type_value, branch_fns=branch_fns)
     return tf.expand_dims(J, 0)  # Add batch dimension
 

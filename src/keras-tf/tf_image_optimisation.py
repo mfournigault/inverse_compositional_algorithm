@@ -1,50 +1,58 @@
 import tensorflow as tf
 
-from image_optimisation import RobustErrorFunctionType
 
-
-def tf_rhop(
-            t2: tf.Tensor,
-            lambda_: float,
-            type_: RobustErrorFunctionType
-        ) -> tf.Tensor:
+# @tf.function(input_signature=[tf.TensorSpec(shape=[None, None], dtype=tf.float32),
+#                                 tf.TensorSpec(shape=[], dtype=tf.float32),
+#                                 tf.TensorSpec(shape=[], dtype=tf.int32)])
+def tf_rhop(t2, lambda_, type_) -> tf.Tensor:
     """
     Derivative of robust error functions, TensorFlow version.
     
     Parameters:
-        t2 (tf.Tensor): squared difference of both images, now a mtrix  
-        lambda_ (float): robust threshold
-        type_ (int): choice of the robust error function
+        t2: squared difference of both images, now a mtrix  
+        lambda_: robust threshold
+        type_: choice of the robust error function
         
     Returns:
         tf.Tensor: result of the robust error function derivative
     """
     lambda2 = lambda_ * lambda_
-    if type_ == RobustErrorFunctionType.QUADRATIC:
-        result = tf.ones_like(t2)
-    elif type_ == RobustErrorFunctionType.TRUNCATED_QUADRATIC:
-        result = tf.where(t2 < lambda2, tf.ones_like(t2), tf.zeros_like(t2))
-    elif type_ == RobustErrorFunctionType.GERMAN_MCCLURE:
-        result = lambda2 / tf.square(lambda2 + t2)
-    elif type_ == RobustErrorFunctionType.LORENTZIAN:
-        result = 1.0 / (lambda2 + t2)
-    elif type_ == RobustErrorFunctionType.CHARBONNIER:
-        result = 1.0 / tf.sqrt(t2 + lambda2)
-    else:
-        raise ValueError("Unknown type for robust error function")
-    return result
+    def quadratic():  #RobustErrorFunctionType.QUADRATIC:
+        return tf.ones_like(t2)
+    def truncated_quadratic():  # RobustErrorFunctionType.TRUNCATED_QUADRATIC:
+        return tf.where(t2 < lambda2, tf.ones_like(t2), tf.zeros_like(t2))
+    def german_mcclure():  # RobustErrorFunctionType.GERMAN_MCCLURE:
+        return lambda2 / tf.square(lambda2 + t2)
+    def lorentzian():  # RobustErrorFunctionType.LORENTZIAN:
+        return 1.0 / (lambda2 + t2)
+    def charbonnier():  # RobustErrorFunctionType.CHARBONNIER:
+        return 1.0 / tf.sqrt(t2 + lambda2)
+    def error_fn():
+        def raise_error():
+            raise ValueError("Unsupported transformation type")
+        return tf.py_function(raise_error, [], Tout=tf.float32)
+    
+    branch_fns = {
+        0: quadratic,
+        1: truncated_quadratic,
+        2: german_mcclure,
+        3: lorentzian,
+        4: charbonnier
+    }
 
-def tf_robust_error_function(
-            DI: tf.Tensor,
-            lambda_: float,
-            type_: RobustErrorFunctionType
-        ) -> tf.Tensor:
+    return tf.switch_case(type_, branch_fns=branch_fns, default=error_fn)
+
+
+# @tf.function(input_signature=[tf.TensorSpec(shape=[None, None, None], dtype=tf.float32),
+#                                 tf.TensorSpec(shape=[], dtype=tf.float32),
+#                                 tf.TensorSpec(shape=[], dtype=tf.int32)])
+def tf_robust_error_function(DI, lambda_, type_) -> tf.Tensor:
     """
     Apply a robust function to the difference of images.
     Parameters:
-        DI (tf.Tensor): 3D tensor [ny, nx, nz] of image differences.
-        lambda_ (float): seuil robuste.
-        type_ (RobustErrorFunctionType): type de fonction robuste.
+        DI: 3D tensor [ny, nx, nz] of image differences.
+        lambda_: seuil robuste.
+        type_: type de fonction robuste.
     Returns:
         tf.Tensor: 2D tensor [ny, nx] of robust error function values.
     """
@@ -58,10 +66,10 @@ def tf_robust_error_function(
     return rho
 
 
-@tf.function
-def tf_steepest_descent_images(Ix: tf.Tensor, 
-                               Iy: tf.Tensor, 
-                               J: tf.Tensor) -> tf.Tensor:
+# @tf.function(input_signature=[tf.TensorSpec(shape=[None, None, None, None], dtype=tf.float32),
+#                               tf.TensorSpec(shape=[None, None, None, None], dtype=tf.float32),
+#                               tf.TensorSpec(shape=[None, None, None, None], dtype=tf.float32)])
+def tf_steepest_descent_images(Ix, Iy, J) -> tf.Tensor:
     """
     Calculate the steepest descent images DI^t*J for optimization.
     Args:

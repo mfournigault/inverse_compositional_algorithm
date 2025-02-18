@@ -1,6 +1,8 @@
 import tensorflow as tf
 
-def cubic(x):
+
+# @tf.function(input_signature=(tf.TensorSpec(shape=[None, None, None], dtype=tf.float32),))
+def cubic(x: tf.Tensor) -> tf.Tensor:
     """
     Computes the cubic interpolation function for the given input tensor.
 
@@ -26,8 +28,10 @@ def cubic(x):
                              (-0.5 * absx3 + 2.5 * absx2 - 4.0 * absx + 2.0),
                              tf.zeros_like(x)))
 
-
-def get_pixel_value(img, x, y):
+# @tf.function(input_signature=(tf.TensorSpec(shape=[None, None, None, None], dtype=tf.float32),
+#                               tf.TensorSpec(shape=[None, None, None], dtype=tf.int32),
+#                               tf.TensorSpec(shape=[None, None, None], dtype=tf.int32)))
+def get_pixel_value(img: tf.Tensor, x: tf.Tensor, y: tf.Tensor) -> tf.Tensor:
     """
     Retrieves the pixel values from the image tensor at the specified (x, y) coordinates.
     Args:
@@ -51,8 +55,9 @@ def get_pixel_value(img, x, y):
     
     return tf.gather_nd(img, indices)
 
-
-def bicubic_sampler(image, grid):
+# @tf.function(input_signature=(tf.TensorSpec(shape=[None, None, None, None], dtype=tf.float32),
+#                               tf.TensorSpec(shape=[None, None, None, None], dtype=tf.float32)))
+def bicubic_sampler(image: tf.Tensor, grid: tf.Tensor) -> tf.Tensor:
     """
     Perform bicubic interpolation on the given image using the provided grid.
     Args:
@@ -71,28 +76,28 @@ def bicubic_sampler(image, grid):
     input_shape = tf.shape(image)
     batch_size, H, W, channels = input_shape[0], input_shape[1], input_shape[2], input_shape[3]
     # grid shape is (batch, 3, H, W) 3 for x, y, 1
-    grid_x = grid[:, 0, :, :]  # extract x coordinates with shape [batch, W]
-    grid_y = grid[:, 1, :, :]  # extract y coordinates with shape [batch, H]
+    grid_x = grid[:, 0, :, :]  
+    grid_y = grid[:, 1, :, :]  
 
     # We clip the grid values to avoid out of range values
-    x0 = tf.cast(tf.floor(grid_x), tf.int32)  # shape [batch, W]
-    y0 = tf.cast(tf.floor(grid_y), tf.int32)  # shape [batch, H]
+    x0 = tf.cast(tf.floor(grid_x), tf.int32)
+    y0 = tf.cast(tf.floor(grid_y), tf.int32)
 
     # For each pixel, we need the 16 neighbors to perform the bicubic interpolation
     # So create 4 indices around (x0,y0) for each dim
-    x_indexes = [x0 - 1, x0, x0 + 1, x0 + 2]  # list of 4 indices with shape [batch, W]
-    y_indexes = [y0 - 1, y0, y0 + 1, y0 + 2]  # list of 4 indices with shape [batch, H]
+    x_indexes = [x0 - 1, x0, x0 + 1, x0 + 2]
+    y_indexes = [y0 - 1, y0, y0 + 1, y0 + 2]
 
     # Compute the weights for each neighbor
-    x_diff = grid_x - tf.cast(x0, tf.float32)  # shape [batch, W]
-    y_diff = grid_y - tf.cast(y0, tf.float32)  # shape [batch, H]
+    x_diff = grid_x - tf.cast(x0, tf.float32)
+    y_diff = grid_y - tf.cast(y0, tf.float32)
 
     weights_x = [cubic(x_diff + 1.0), cubic(x_diff), cubic(x_diff - 1.0), cubic(x_diff - 2.0)]
     weights_y = [cubic(y_diff + 1.0), cubic(y_diff), cubic(y_diff - 1.0), cubic(y_diff - 2.0)]
 
     # Convert list into tensors with shape [batch, d, 4]
-    weights_x = tf.stack(weights_x, axis=-1)  # list of 4 tensors with shape [batch, W] -> [batch, W, 4]
-    weights_y = tf.stack(weights_y, axis=-1)  # list of 4 tensors with shape [batch, H] -> [batch, H, 4]
+    weights_x = tf.stack(weights_x, axis=-1)
+    weights_y = tf.stack(weights_y, axis=-1)
 
     # Tensor with shape [batch, H, W, channels]
     output = tf.zeros([batch_size, tf.shape(grid)[2], tf.shape(grid)[3], channels], dtype=image.dtype)
@@ -109,3 +114,4 @@ def bicubic_sampler(image, grid):
             w = weights_y[:, :, :, j] * weights_x[:, :, :, i]
             output += pixel * tf.expand_dims(w, axis=-1)
     return output
+
