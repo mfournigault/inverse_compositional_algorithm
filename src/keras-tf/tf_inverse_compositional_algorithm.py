@@ -11,6 +11,7 @@ import zoom as zm
 from tf_image_optimisation import tf_robust_error_function, tf_steepest_descent_images
 from tf_transformation import tf_update_transform, tf_params2matrix, tf_warp_image, tf_nparams
 from tf_derivatives import tf_jacobian, tf_compute_gradients
+from tf_zoom import tf_zoom_in_parameters
 
 import imageio
 
@@ -40,12 +41,22 @@ def save_image(img_tensor, name):
     prep = tf.where(tf.math.is_nan(img_tensor), tf.constant(0., dtype=img_tensor.dtype), img_tensor)
     min_val = tf.reduce_min(prep)
     max_val = tf.reduce_max(prep)
-    tf.print("Étendue de prep : min =", min_val, ", max =", max_val)
     normalized = (prep - min_val) / (max_val - min_val)
     
     # Convertir en uint8 [0,255] en utilisant tf.image.convert_image_dtype
     img_uint8 = tf.image.convert_image_dtype(normalized, tf.uint8).numpy()
     imageio.imwrite(name, img_uint8)
+
+
+def pad_params(params, required_length):
+    current_length = tf.shape(params)[0]
+    pad_length = required_length - current_length
+    return tf.cond(
+        tf.greater(pad_length, 0),
+        lambda: tf.pad(params, [[0, pad_length]]),
+        lambda: params
+    )
+
 
 class InverseCompositional(Layer):
     """
@@ -123,8 +134,10 @@ class InverseCompositional(Layer):
                              - The first element is the batch size.
                              - The second, third, and fourth elements are the dimensions (ny, nx, nz) of the input tensor.
         """
-        self.batch_size = input_shape[0][0]
-        self.ny, self.nx, self.nz = input_shape[0][1:4]
+        self.batch_size = tf.Variable(input_shape[0][0], dtype=tf.int32)
+        self.ny = tf.Variable(input_shape[0][1], dtype=tf.int32)
+        self.nx = tf.Variable(input_shape[0][2], dtype=tf.int32)
+        self.nz = tf.Variable(input_shape[0][3], dtype=tf.int32)
 
     @tf.function(reduce_retracing=True)
     def call(self, inputs):
@@ -152,6 +165,10 @@ class InverseCompositional(Layer):
         # inputs are batches: every I1 in the batch is associated to a I2 in 
         # the batch and a p_init
         I1, I2, p = inputs
+        # p_ext = tf.map_fn(
+        #     lambda x: pad_params(x, 8), p,
+        #     fn_output_signature=tf.TensorSpec(shape=[None], dtype=tf.float32)
+        # )
         if I1.dtype != tf.float32:
             I1 = tf.cast(I1, tf.float32)
         if I2.dtype != tf.float32:
@@ -188,6 +205,9 @@ class InverseCompositional(Layer):
             # Solve for dp
             dp = tf.einsum('bij,bj->bi', H_inv, b)  # dp is a batch of updates
             error = tf.norm(dp) # error is a batch of update norms
+            dp_pad = tf.map_fn(lambda x: pad_params(x, 8), dp,
+                               fn_output_signature=tf.TensorSpec(shape=[None], dtype=tf.float32))
+            dp = dp_pad 
         
             updated_params = tf.map_fn(
                 lambda x: tf_update_transform(x[0], x[1], self.transform_type),
@@ -198,7 +218,6 @@ class InverseCompositional(Layer):
             
             if self.verbose:
                 for b in range(self.batch_size):
-                    # tf.print(f"--- Batch {b}")
                     tf.print(f"|Dp|={error}: p=(", end="")
                     for i in range(tf_nparams(self.transform_type) - 1):
                         tf.print(f"{p[b][i]} ", end="")
@@ -411,7 +430,6 @@ class RobustInverseCompositional(Layer):
             
             if self.verbose:
                 for b in range(self.batch_size):
-                    # tf.print(f"--- Batch {b}")
                     tf.print(f"|Dp|={error}: p=(", end="")
                     for i in range(tf_nparams(self.transform_type) - 1):
                         tf.print(f"{p[b][i]} ", end="")
@@ -507,7 +525,8 @@ class PyramidalInverseCompositional(Layer):
         if I2.dtype != tf.float32:
             I2 = tf.cast(I2, tf.float32)
         nparams = self.transform_type.nparams()
-        p = [tf.zeros((self.batch_size, nparams), dtype=tf.float32) for _ in range(self.nscales)]
+        # p = [tf.zeros((self.batch_size, nparams), dtype=tf.float32) for _ in range(self.nscales)]
+        p = [tf.zeros((self.batch_size, 8), dtype=tf.float32) for _ in range(self.nscales)]
 
         # Build pyramids
         I1_pyramid = [I1]
@@ -534,16 +553,28 @@ class PyramidalInverseCompositional(Layer):
 
             # Upscale parameters for next scale
             if scale > 0:
-                updated_params = []
-                for b in range(self.batch_size):
-                    upscaled_param = zm.zoom_in_parameters(p[scale][b],
-                                            self.transform_type,
-                                            self.pyramid_shapes[scale][2],
-                                            self.pyramid_shapes[scale][1],
-                                            self.pyramid_shapes[scale-1][2],
-                                            self.pyramid_shapes[scale-1][1])
-                    updated_params.append(upscaled_param)
-                p[scale-1] = tf.stack(updated_params, axis=0)
+                # updated_params = []
+                upscaled_param = tf.map_fn(
+                    lambda x: tf_zoom_in_parameters(
+                        x,
+                        tf.constant(self.transform_type.value-1, dtype=tf.int32),
+                        self.pyramid_shapes[scale][2],
+                        self.pyramid_shapes[scale][1],
+                        self.pyramid_shapes[scale-1][2],
+                        self.pyramid_shapes[scale-1][1]),
+                    p[scale],
+                    fn_output_signature=tf.TensorSpec(shape=[None], dtype=tf.float32)
+                )
+                p[scale-1] = upscaled_param
+                # for b in range(self.batch_size):
+                #     upscaled_param = tf_zoom_in_parameters(p[scale][b],
+                #                             self.transform_type,
+                #                             self.pyramid_shapes[scale][2],
+                #                             self.pyramid_shapes[scale][1],
+                #                             self.pyramid_shapes[scale-1][2],
+                #                             self.pyramid_shapes[scale-1][1])
+                #     updated_params.append(upscaled_param)
+                # p[scale-1] = tf.stack(updated_params, axis=0)
 
         return p, error, DI, Iw
 

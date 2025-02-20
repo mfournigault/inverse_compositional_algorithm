@@ -25,9 +25,19 @@ def tf_nparams(transform_type_value):
     return tf.switch_case(transform_type_value, branch_fns, default=error_fn)
 
 
-@tf.function(reduce_retracing=True,
-             input_signature=(tf.TensorSpec(shape=[None], dtype=tf.float32),
-                              tf.TensorSpec(shape=[], dtype=tf.int32)))
+def pad_params(params, required_length):
+    current_length = tf.shape(params)[0]
+    pad_length = required_length - current_length
+    return tf.cond(
+        tf.greater(pad_length, 0),
+        lambda: tf.pad(params, [[0, pad_length]]),
+        lambda: params
+    )
+
+
+# @tf.function(reduce_retracing=True,
+#              input_signature=(tf.TensorSpec(shape=[None], dtype=tf.float32),
+#                               tf.TensorSpec(shape=[], dtype=tf.int32)))
 def tf_params2matrix(p, transform_type) -> tf.Tensor:
     """
     Converts the given parameters `p` into a transformation matrix based on the specified `transform_type`.
@@ -42,42 +52,53 @@ def tf_params2matrix(p, transform_type) -> tf.Tensor:
     dtype = p.dtype
     one = tf.cast(1, dtype)
     zero = tf.cast(0, dtype)
-    
+
+
     def translation():  #TransformType.TRANSLATION:
         return tf.convert_to_tensor([
             [one, zero, p[0]],
             [zero, one, p[1]],
             [zero, zero, one]
         ], dtype=dtype)
-    
+
     def euclidean():  #TransformType.EUCLIDEAN:
+        # we use an intermediate tensor to enable the "compilation" of the function by
+        # autograph without the use of tf.function and input_signature, and without
+        # generating errors on accessing the tensor elements of p.
+        # For example, without this, specifing a p for translation with only 2 parameters
+        # would generate an error in other functions than translation for accessing elements
+        # with index superior to 1.
+        p_ext = pad_params(p, 3)
         return tf.convert_to_tensor([
-            [tf.cos(p[2]), -tf.sin(p[2]), p[0]],
-            [tf.sin(p[2]),  tf.cos(p[2]), p[1]],
-            [zero,         zero,          one]
+            [tf.cos(p_ext[2]), -tf.sin(p_ext[2]), p_ext[0]],
+            [tf.sin(p_ext[2]),  tf.cos(p_ext[2]), p_ext[1]],
+            [zero, zero, one]
         ], dtype=dtype)
-    
+
     def similarity():  #TransformType.SIMILARITY:
+        p_ext = pad_params(p, 4)
         return tf.convert_to_tensor([
-            [one + p[2], -p[3],      p[0]],
-            [p[3],       one + p[2], p[1]],
-            [zero,       zero,       one]
+            [one + p_ext[2], -p_ext[3], p_ext[0]],
+            [p_ext[3], one + p_ext[2], p_ext[1]],
+            [zero, zero, one]
         ], dtype=dtype)
-    
+
     def affinity():  #TransformType.AFFINITY:
+        p_ext = pad_params(p, 6)
         return tf.convert_to_tensor([
-            [one + p[2], p[3],       p[0]],
-            [p[4],       one + p[5],  p[1]],
-            [zero,       zero,        one]
+            [one + p_ext[2], p_ext[3], p_ext[0]],
+            [p_ext[4], one + p_ext[5], p_ext[1]],
+            [zero, zero, one]
         ], dtype=dtype)
-    
+
     def homography():  #TransformType.HOMOGRAPHY:
+        p_ext = pad_params(p, 8)
         return tf.convert_to_tensor([
-            [one + p[0], p[1],      p[2]],
-            [p[3],       one + p[4], p[5]],
-            [p[6],       p[7],      one]
+            [one + p_ext[0], p_ext[1], p_ext[2]],
+            [p_ext[3], one + p_ext[4], p_ext[5]],
+            [p_ext[6], p_ext[7], one]
         ], dtype=dtype)
-    
+
     branch_fns = {
         0: translation,
         1: euclidean,
@@ -89,7 +110,7 @@ def tf_params2matrix(p, transform_type) -> tf.Tensor:
         def raise_error():
             raise ValueError("Unsupported transformation type")
         return tf.py_function(raise_error, [], Tout=tf.float32)
-    
+
     return tf.switch_case(transform_type, branch_fns, default=error_fn)
 
 
@@ -99,10 +120,10 @@ def tf_params2matrix(p, transform_type) -> tf.Tensor:
 #                               tf.TensorSpec(shape=[], dtype=tf.int32),
 #                               tf.TensorSpec(shape=[None, None], dtype=tf.float32)))
 def tf_transformed_grid(
-            batch_size, 
+            batch_size,
             ny,
-            nx, 
-            transform_type, 
+            nx,
+            transform_type,
             p) -> tf.Tensor:
     """
     Transforms a grid of coordinates using a batch of affine transformation parameters.
@@ -111,10 +132,10 @@ def tf_transformed_grid(
         ny (int): The number of rows in the grid.
         nx (int): The number of columns in the grid.
         transform_type (TransformType): The type of geometric transformation.
-        p (tf.Tensor): A tensor of shape (batch_size, num_params) containing the affine 
+        p (tf.Tensor): A tensor of shape (batch_size, num_params) containing the affine
         transformation parameters for each element in the batch.
     Returns:
-        tf.Tensor: A tensor of shape (batch_size, 3, nx, ny) containing the transformed 
+        tf.Tensor: A tensor of shape (batch_size, 3, nx, ny) containing the transformed
         grid coordinates for each element in the batch.
     """
     x = tf.linspace(0.0, tf.cast(nx-1, dtype=tf.float32), nx)
@@ -123,7 +144,9 @@ def tf_transformed_grid(
     ones = tf.ones_like(X)
     coords = tf.stack([X, Y, ones], axis=0)
 
-    affine_matrix = tf.map_fn(lambda params: tf_params2matrix(params, transform_type), p, dtype=tf.float32)
+    affine_matrix = tf.map_fn(lambda params: tf_params2matrix(params, transform_type),
+                              p,
+                              fn_output_signature=tf.TensorSpec(shape=[None, None], dtype=tf.float32))
     transformed = tf.einsum('bij,jhw->bihw', affine_matrix, coords)
 
     return transformed
@@ -164,9 +187,9 @@ def tf_warp_image(I2, transform_type, p, delta) -> tf.Tensor:
 
         # Define a mask to set pixels outside the valid region to NaN
         mask = tf.logical_and(
-                    tf.logical_and(grid_int[:, 0, :, :] >= delta, 
+                    tf.logical_and(grid_int[:, 0, :, :] >= delta,
                                    grid_int[:, 0, :, :] <= nx-delta),
-                    tf.logical_and(grid_int[:, 1, :, :] >= delta, 
+                    tf.logical_and(grid_int[:, 1, :, :] >= delta,
                                    grid_int[:, 1, :, :] <= ny-delta)
                 )
         mask = tf.expand_dims(mask, axis=-1)
@@ -179,7 +202,7 @@ def tf_warp_image(I2, transform_type, p, delta) -> tf.Tensor:
         def raise_error():
             raise ValueError("Unsupported transformation type")
         return tf.py_function(raise_error, [], Tout=tf.float32)
-    
+
     # Test the value of transform_type using TensorFlow operations:
     return tf.cond(
            tf.less_equal(transform_type, tf.constant(5, dtype=tf.int32)),
@@ -193,7 +216,7 @@ def tf_warp_image(I2, transform_type, p, delta) -> tf.Tensor:
 def tf_update_transform(p, dp, transform_type) -> tf.Tensor:
     """
     Update the transformation parameters p with the update dp.
-    
+
     Args:
         p (tf.Tensor): actual transformation parameters.
         dp (tf.Tensor): update to apply.
@@ -203,7 +226,7 @@ def tf_update_transform(p, dp, transform_type) -> tf.Tensor:
         tf.Tensor: updated transformation parameters.
     """
     threshold = tf.constant(1e-10, dtype=tf.float32)
-    
+
     def translation():  #TransformType.TRANSLATION:
         # We suppose that p and dp have 2 parameters here.
         new_p = tf.concat([p[:2] - dp[:2], p[2:]], axis=0)
@@ -211,6 +234,8 @@ def tf_update_transform(p, dp, transform_type) -> tf.Tensor:
 
     def euclidean():  #TransformType.EUCLIDEAN:
         # We suppose that p and dp have 3 parameters here.
+        # p_ext = pad_params(p, 3)
+        # dp_ext = pad_params(dp, 3)
         a = tf.cos(dp[2])
         b = tf.sin(dp[2])
         c = dp[0]
@@ -229,6 +254,8 @@ def tf_update_transform(p, dp, transform_type) -> tf.Tensor:
 
     def similarity():  #TransformType.SIMILARITY:
         # We suppose that p and dp have 4 parameters here.
+        # p_ext = pad_params(p, 4)
+        # dp_ext = pad_params(dp, 4)
         a = dp[2]
         b = dp[3]
         c = dp[0]
@@ -249,6 +276,8 @@ def tf_update_transform(p, dp, transform_type) -> tf.Tensor:
 
     def affinity():  #TransformType.AFFINITY:
         # We suppose that p and dp have 6 parameters here.
+        # p_ext = pad_params(p, 6)
+        # dp_ext = pad_params(dp, 6)
         a = dp[2]
         b = dp[3]
         c = dp[0]
@@ -275,6 +304,8 @@ def tf_update_transform(p, dp, transform_type) -> tf.Tensor:
 
     def homography():  #TransformType.HOMOGRAPHY:
         # We suppose that p and dp have 8 parameters here.
+        # p_ext = pad_params(p, 8)
+        # dp_ext = pad_params(dp, 8)
         a = dp[0]
         b = dp[1]
         c = dp[2]
@@ -316,7 +347,7 @@ def tf_update_transform(p, dp, transform_type) -> tf.Tensor:
         def raise_error():
             raise ValueError("Unsupported transformation type")
         return tf.py_function(raise_error, [], Tout=tf.float32)
-    
+
     return tf.switch_case(transform_type, branch_fns, default=error_fn)
 
 

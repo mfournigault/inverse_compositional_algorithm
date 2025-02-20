@@ -52,8 +52,8 @@ def tf_jacobian(transform_type_value, nx, ny) -> tf.Tensor:
         tf.Tensor: A tensor representing the Jacobian matrix with an added 
         batch dimension.
     """
-    x = tf.range(nx, dtype=tf.float32)
-    y = tf.range(ny, dtype=tf.float32)
+    x = tf.range(tf.cast(nx, dtype=tf.float32), dtype=tf.float32)
+    y = tf.range(tf.cast(ny, dtype=tf.float32), dtype=tf.float32)
     X, Y = tf.meshgrid(x, y)
     ones = tf.ones_like(X)
     zeros = tf.zeros_like(X)
