@@ -87,7 +87,6 @@ class InverseCompositional(Layer):
     """
     def __init__(
         self, 
-        transform_type: tr.TransformType, 
         TOL: float = 1e-3,
         nanifoutside: bool = True,
         delta: int = 10,
@@ -98,8 +97,6 @@ class InverseCompositional(Layer):
         Initialize the InverseCompositional class.
         Parameters:
         -----------
-        transform_type : tr.TransformType
-            The type of transformation to be used.
         TOL : float, optional
             Tolerance used for the convergence in the iterations (default is 1e-3).
         nanifoutside : bool, optional
@@ -115,9 +112,6 @@ class InverseCompositional(Layer):
         """
         
         super(InverseCompositional, self).__init__(trainable=False, **kwargs)
-        # We substract 1 to transform_type because the value of the enum starts at 1
-        # and tf.switch_case starts at 0
-        self.transform_type = tf.constant(transform_type.value-1, dtype=tf.int32)
         self.TOL = tf.constant(TOL, dtype=tf.float32)
         self.nanifoutside = tf.constant(nanifoutside, dtype=tf.bool)
         self.delta = tf.constant(delta, dtype=tf.int32)
@@ -140,7 +134,7 @@ class InverseCompositional(Layer):
         self.nz = tf.Variable(input_shape[0][3], dtype=tf.int32)
 
     @tf.function(reduce_retracing=True)
-    def call(self, inputs):
+    def call(self, inputs, transform_type=None, **kwargs):
         """
         Perform the inverse compositional algorithm on the input images.
         Args:
@@ -148,6 +142,7 @@ class InverseCompositional(Layer):
                 - I1 (tf.Tensor): The first batch of images.
                 - I2 (tf.Tensor): The second batch of images.
                 - p (tf.Tensor): The initial parameters for the transformation.
+            transform_type (tr.TransformType): The type of transformation to be used.
         Returns:
             tuple: A tuple containing four elements:
                 - p_final (tf.Tensor): The final transformation parameters.
@@ -165,10 +160,13 @@ class InverseCompositional(Layer):
         # inputs are batches: every I1 in the batch is associated to a I2 in 
         # the batch and a p_init
         I1, I2, p = inputs
-        # p_ext = tf.map_fn(
-        #     lambda x: pad_params(x, 8), p,
-        #     fn_output_signature=tf.TensorSpec(shape=[None], dtype=tf.float32)
-        # )
+
+        # Moved transform_type from the init to the call in order to be able to change
+        # it with new datasets without having to recompile the layer
+        # We substract 1 to transform_type because the value of the enum starts at 1
+        # and tf.switch_case starts at 0
+        self.transform_type = tf.constant(transform_type.value-1, dtype=tf.int32)
+        
         if I1.dtype != tf.float32:
             I1 = tf.cast(I1, tf.float32)
         if I2.dtype != tf.float32:
@@ -286,7 +284,6 @@ class RobustInverseCompositional(Layer):
     """
     def __init__(
         self, 
-        transform_type: tr.TransformType, 
         TOL: float = 1e-3,
         robust_type: io.RobustErrorFunctionType = io.RobustErrorFunctionType.CHARBONNIER,
         lambda_: float = 0.0,
@@ -299,8 +296,6 @@ class RobustInverseCompositional(Layer):
         Initialize the RobustInverseCompositional class.
         Parameters:
         -----------
-        transform_type : tr.TransformType
-            The type of transformation to be used.
         TOL : float, optional
             Tolerance used for the convergence in the iterations (default is 1e-3).
         robust_type : io.RobustErrorFunctionType, optional
@@ -318,11 +313,7 @@ class RobustInverseCompositional(Layer):
         **kwargs : dict
             Additional keyword arguments.
         """
-        
         super(RobustInverseCompositional, self).__init__(trainable=False, **kwargs)
-        # We substract 1 to transform_type because the value of the enum starts at 1
-        # and tf.switch_case starts at 0
-        self.transform_type = tf.constant(transform_type.value-1, dtype=tf.int32)
         self.TOL = tf.constant(TOL, dtype=tf.float32)
         self.nanifoutside = tf.constant(nanifoutside, dtype=tf.bool)
         self.delta = tf.constant(delta, dtype=tf.int32)
@@ -346,7 +337,7 @@ class RobustInverseCompositional(Layer):
         self.ny, self.nx, self.nz = input_shape[0][1:4]
 
     @tf.function(reduce_retracing=True)
-    def call(self, inputs):
+    def call(self, inputs, transform_type=None, **kwargs):
         """
         Perform the inverse compositional algorithm on the input images.
         Args:
@@ -354,6 +345,7 @@ class RobustInverseCompositional(Layer):
                 - I1 (tf.Tensor): The first batch of images.
                 - I2 (tf.Tensor): The second batch of images.
                 - p (tf.Tensor): The initial parameters for the transformation.
+            transform_type (tr.TransformType): The type of transformation to be used.
         Returns:
             tuple: A tuple containing four elements:
                 - p_final (tf.Tensor): The final transformation parameters.
@@ -371,6 +363,13 @@ class RobustInverseCompositional(Layer):
         # inputs are batches: every I1 in the batch is associated to a I2 in 
         # the batch and a p_init
         I1, I2, p = inputs
+        
+        # Moved transform_type from the init to the call in order to be able to change
+        # it with new datasets without having to recompile the layer
+        # We substract 1 to transform_type because the value of the enum starts at 1
+        # and tf.switch_case starts at 0
+        self.transform_type = tf.constant(transform_type.value-1, dtype=tf.int32)
+
         if I1.dtype != tf.float32:
             I1 = tf.cast(I1, tf.float32)
         if I2.dtype != tf.float32:
@@ -487,7 +486,6 @@ class PyramidalInverseCompositional(Layer):
 
         if robust_type == io.RobustErrorFunctionType.QUADRATIC:
             self.ic_layers = [InverseCompositional(
-                                transform_type,
                                 TOL,
                                 nanifoutside,
                                 delta,
@@ -497,7 +495,6 @@ class PyramidalInverseCompositional(Layer):
                                 **kwargs) for s in range(nscales)]
         else:
             self.ic_layers = [RobustInverseCompositional(
-                                    transform_type,
                                     TOL,
                                     robust_type,
                                     lambda_,
@@ -518,7 +515,11 @@ class PyramidalInverseCompositional(Layer):
                              int(current_shape[1]*self.nu),
                              current_shape[2])
 
-    def call(self, inputs):
+    def call(self, inputs, transform_type=None, **kwargs):
+        # Called for a new transform type, we update it
+        if transform_type is not None:
+            self.transform_type = transform_type
+
         I1, I2 = inputs
         if I1.dtype != tf.float32:
             I1 = tf.cast(I1, tf.float32)
@@ -548,7 +549,8 @@ class PyramidalInverseCompositional(Layer):
                 tf.print(f"Scale: {scale}")
             ic_layer = self.ic_layers[scale]
             # print("shape of p[scale]: ", p[scale].shape)
-            p_scale, error, DI, Iw = ic_layer([I1_pyramid[scale], I2_pyramid[scale], p[scale]])
+            p_scale, error, DI, Iw = ic_layer(inputs=[I1_pyramid[scale], I2_pyramid[scale], p[scale]], 
+                                              transform_type=self.transform_type)
             p[scale] = p_scale
 
             # Upscale parameters for next scale
