@@ -507,8 +507,10 @@ class PyramidalInverseCompositional(Layer):
 
     def build(self, input_shape):
         self.pyramid_shapes = []
+        print("input_shape: ", input_shape)
         self.batch_size = input_shape[0][0]
         current_shape = input_shape[0][1:]  # Assume I1, I2 have same shape
+        print("current_shape: ", current_shape)
         for _ in range(self.nscales):
             self.pyramid_shapes.append(current_shape)
             current_shape = (int(current_shape[0]*self.nu),
