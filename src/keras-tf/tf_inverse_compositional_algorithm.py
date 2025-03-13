@@ -217,8 +217,8 @@ class InverseCompositional(Layer):
             if self.verbose:
                 for b in range(self.batch_size):
                     tf.print(f"|Dp|={error}: p=(", end="")
-                    for i in range(tf_nparams(self.transform_type) - 1):
-                        tf.print(f"{p[b][i]} ", end="")
+                    for j in range(tf_nparams(self.transform_type) - 1):
+                        tf.print(f"{p[b][j]} ", end="")
 
             return i+1, p, error, DI, Iw
         
@@ -430,8 +430,8 @@ class RobustInverseCompositional(Layer):
             if self.verbose:
                 for b in range(self.batch_size):
                     tf.print(f"|Dp|={error}: p=(", end="")
-                    for i in range(tf_nparams(self.transform_type) - 1):
-                        tf.print(f"{p[b][i]} ", end="")
+                    for j in range(tf_nparams(self.transform_type) - 1):
+                        tf.print(f"{p[b][j]} ", end="")
                     tf.print(f"{p[b][tf_nparams(self.transform_type) - 1]}), lambda_={self.lambda_it}")
 
             return i+1, p, error, DI, Iw
