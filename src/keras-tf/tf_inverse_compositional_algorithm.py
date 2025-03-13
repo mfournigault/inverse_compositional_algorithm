@@ -580,5 +580,5 @@ class PyramidalInverseCompositional(Layer):
                 #     updated_params.append(upscaled_param)
                 # p[scale-1] = tf.stack(updated_params, axis=0)
 
-        return p, error, DI, Iw
+        return p[0], error, DI, Iw
 
