@@ -202,7 +202,7 @@ class InverseCompositional(Layer):
             
             # Solve for dp
             dp = tf.einsum('bij,bj->bi', H_inv, b)  # dp is a batch of updates
-            error = tf.norm(dp) # error is a batch of update norms
+            error = tf.norm(dp, axis=1) # error is a batch of update norms
             dp_pad = tf.map_fn(lambda x: pad_params(x, 8), dp,
                                fn_output_signature=tf.TensorSpec(shape=[None], dtype=tf.float32))
             dp = dp_pad 
@@ -243,7 +243,7 @@ class InverseCompositional(Layer):
             shape_invariants=(
                 tf.TensorShape([]),                      # i is scalair
                 tf.TensorShape([None, None]),              # p: batch_size,  nparams 
-                tf.TensorShape([]),                      # error is scalar
+                tf.TensorShape([None]),                      # error vector of size batch
                 tf.TensorShape(None),  # DI: batch, H, W, C
                 tf.TensorShape(None)   # Iw: batch, H, W, C
             ))
@@ -418,7 +418,7 @@ class RobustInverseCompositional(Layer):
             
             # Solve for dp
             dp = tf.einsum('bij,bj->bi', H_inv, b)  # dp is a batch of updates
-            error = tf.norm(dp) # error is a batch of update norms
+            error = tf.norm(dp, axis=1) # error is a batch of update norms
         
             updated_params = tf.map_fn(
                 lambda x: tf_update_transform(x[0], x[1], self.transform_type),
@@ -457,7 +457,7 @@ class RobustInverseCompositional(Layer):
             shape_invariants=(
                 tf.TensorShape([]),                      # i is scalair
                 tf.TensorShape([None, None]),              # p: batch_size,  nparams 
-                tf.TensorShape([]),                      # error is scalar
+                tf.TensorShape([None]),                      # error is a vector of size batch
                 tf.TensorShape(None),  # DI: batch, H, W, C
                 tf.TensorShape(None)   # Iw: batch, H, W, C
             ))
