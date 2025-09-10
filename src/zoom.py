@@ -123,3 +123,4 @@ def zoom_in_parameters(
             raise ValueError("Unsupported transformation type")
 
     return pout
+

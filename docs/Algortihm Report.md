@@ -437,3 +437,12 @@ The results of the python implementation are available in the notebook `inverse_
 The results obtained with the python implementation are correct when we use several scales, we can converge to a good solution.
 Nevertheless when we compare these results to the reference results, we can see that the gradient dp converges much slower than in the reference results.
 It should not be the case, so there is a problem of calculation in the python implementation to solve.
+
+
+## 7. Keras and Tensorflow implementation
+
+This implementation is validated on the unit tests and the results are available in the notebook `test_ica_keras.ipynb`.
+Several issues remains to be corrected:
+- The management of the domain definition with Nan values has been fixed by correcting the computation of the mask in the function warp_image.
+- The convergence is now as good as in the numpy implementation. Fixed by correcting the domain definition.
+- Some personal functions need to be mapped into TF functions to enable to the execution end to end on the GPU.
