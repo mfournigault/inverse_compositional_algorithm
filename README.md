@@ -27,7 +27,10 @@ The modified algorithm brings several improvements:
 - better convergence.
 References of the modified inverse compositional algorithm are: "Improvements of the Inverse Compositional Algorithm for Parametric Motion Estimation",  Image Processing On Line, Vol 6, pp 435--464, 2018 https://doi.org/10.5201/ipol.2018.222.
 
-A faster implementation (hardware accelerated, but still python-based) will be developed in the future.
+**Update 2025-09-01:**
+A faster implementation (hardware accelerated), based on Keras and Tensorflow has been developped providing in average a 10x acceleration compared to the numpy version.
+It can be much faster if images processed in the batch are from the same source and can be processed under the same convergence criteria.
+The implementation is available in the branch hardware_acceleration, and will be merged with the main branch soon.
 
 ## Installation
 Instructions to install the project.
