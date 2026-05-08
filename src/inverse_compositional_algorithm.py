@@ -13,7 +13,34 @@ import bicubic_interpolation as bi
 import zoom as zm
 import constants as cts
 
- 
+
+def _to_grayscale(image: np.ndarray) -> np.ndarray:
+    """
+    Convert an image to grayscale with shape (ny, nx, 1).
+
+    Accepts:
+    - 2D array (ny, nx): returned as (ny, nx, 1)
+    - 3D array (ny, nx, 1): returned unchanged
+    - 3D array (ny, nx, 3): converted to grayscale using ITU-R BT.709 coefficients
+
+    Returns:
+        np.ndarray: Grayscale image with shape (ny, nx, 1).
+    """
+    if image.ndim == 2:
+        return image[:, :, np.newaxis]
+    elif image.ndim == 3 and image.shape[2] == 1:
+        return image
+    elif image.ndim == 3 and image.shape[2] == 3:
+        gray = (0.2126 * image[:, :, 0]
+                + 0.7152 * image[:, :, 1]
+                + 0.0722 * image[:, :, 2])
+        return gray[:, :, np.newaxis]
+    else:
+        raise ValueError(
+            "Image must be 2D (ny, nx), 3D grayscale (ny, nx, 1), or 3D RGB (ny, nx, 3)"
+        )
+
+
 def inverse_compositional_algorithm(
         I1: np.ndarray, 
         I2: np.ndarray, 
@@ -44,12 +71,12 @@ def inverse_compositional_algorithm(
     - DI: error image,
     - Iw: warped image.
     """
-    # We suppose that I1 and I2 are RGB images with channels in the last dimension, if not we raise an error
-    if len(I1.shape) != 3 or len(I2.shape) != 3 or I1.shape[2] != 3 or I2.shape[2] != 3:
-        raise ValueError("I1 and I2 must be RGB images with channels in the last dimension")
+    # Convert images to grayscale (ny, nx, 1); accepts 2D, (ny, nx, 1) or RGB (ny, nx, 3)
+    I1 = _to_grayscale(I1)
+    I2 = _to_grayscale(I2)
 
-    # Define nx, ny, nz from the shape of I1 and I2
-    ny, nx, nz = I1.shape # suppose that I1 and I2 are not flattened
+    # Define nx, ny, nz from the shape of I1 and I2 (nz = 1 after grayscale conversion)
+    ny, nx, nz = I1.shape
 
     # Verify the dimensions of I1 and I2
     if I1.shape != I2.shape:
@@ -165,7 +192,11 @@ def robust_inverse_compositional_algorithm(
     - DI: error image,
     - Iw: warped image.
     """
-    # Define nx, ny, nz from the shape of I1 and I2
+    # Convert images to grayscale (ny, nx, 1); accepts 2D, (ny, nx, 1) or RGB (ny, nx, 3)
+    I1 = _to_grayscale(I1)
+    I2 = _to_grayscale(I2)
+
+    # Define nx, ny, nz from the shape of I1 and I2 (nz = 1 after grayscale conversion)
     ny, nx, nz = I1.shape
 
     # Verify the dimensions of I1 and I2
@@ -175,8 +206,6 @@ def robust_inverse_compositional_algorithm(
     # Sanity check on the value of TOL
     if TOL >= 0.01:
         raise ValueError("TOL must be positive and very small (less than 0.01)")
-
-    #TODO: if images are colored and processing requested in grey scale, we must convert them to grey scale
 
     # We force the images to be float64 to avoid problems with the computation accuracy
     if I1.dtype != np.float64 or I2.dtype != np.float64:
@@ -296,10 +325,11 @@ def pyramidal_inverse_compositional_algorithm(
     - DI: error image,
     - Iw: warped image.
     """
-    # We suppose that I1 and I2 are RGB images with channels in the last dimension, if not we raise an error
-    if len(I1.shape) != 3 or len(I2.shape) != 3 or I1.shape[2] != 3 or I2.shape[2] != 3:
-        raise ValueError("I1 and I2 must be RGB images with channels in the last dimension")
-    # Define nx, ny, nz from the shape of I1 and I2
+    # Convert images to grayscale (ny, nx, 1); accepts 2D, (ny, nx, 1) or RGB (ny, nx, 3)
+    I1 = _to_grayscale(I1)
+    I2 = _to_grayscale(I2)
+
+    # Define nx, ny, nz from the shape of I1 and I2 (nz = 1 after grayscale conversion)
     nyy, nxx, nzz = I1.shape
 
     # Verify the dimensions of I1 and I2

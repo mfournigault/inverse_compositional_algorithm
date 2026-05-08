@@ -16,6 +16,26 @@ from tf_zoom import tf_zoom_in_parameters
 import imageio
 
 
+def _tf_to_grayscale(images: tf.Tensor) -> tf.Tensor:
+    """
+    Convert a batch of images to grayscale with shape (batch, ny, nx, 1).
+
+    Accepts:
+    - (batch, ny, nx, 1): returned unchanged
+    - (batch, ny, nx, 3): converted to grayscale using tf.image.rgb_to_grayscale
+
+    Args:
+        images (tf.Tensor): Batch of images with shape (batch, ny, nx, nz).
+
+    Returns:
+        tf.Tensor: Grayscale batch with shape (batch, ny, nx, 1).
+    """
+    nz = images.shape[-1]
+    if nz == 3:
+        return tf.image.rgb_to_grayscale(images)
+    return images
+
+
 def mark_boundaries_as_nan(tensor, delta):
     # tensor with shape [batch, H, W, C]
     shape = tf.shape(tensor)
@@ -171,6 +191,10 @@ class InverseCompositional(Layer):
             I1 = tf.cast(I1, tf.float32)
         if I2.dtype != tf.float32:
             I2 = tf.cast(I2, tf.float32)
+
+        # Convert RGB images to grayscale (nz=1); grayscale inputs are passed through unchanged
+        I1 = _tf_to_grayscale(I1)
+        I2 = _tf_to_grayscale(I2)
         
         J = tf_jacobian(self.transform_type, self.nx, self.ny)
 
@@ -375,6 +399,10 @@ class RobustInverseCompositional(Layer):
         if I2.dtype != tf.float32:
             I2 = tf.cast(I2, tf.float32)
 
+        # Convert RGB images to grayscale (nz=1); grayscale inputs are passed through unchanged
+        I1 = _tf_to_grayscale(I1)
+        I2 = _tf_to_grayscale(I2)
+
         J = tf_jacobian(self.transform_type, self.nx, self.ny)
 
         Ix, Iy = tf_compute_gradients(I1)
@@ -527,6 +555,11 @@ class PyramidalInverseCompositional(Layer):
             I1 = tf.cast(I1, tf.float32)
         if I2.dtype != tf.float32:
             I2 = tf.cast(I2, tf.float32)
+
+        # Convert RGB images to grayscale (nz=1); grayscale inputs are passed through unchanged
+        I1 = _tf_to_grayscale(I1)
+        I2 = _tf_to_grayscale(I2)
+
         nparams = self.transform_type.nparams()
         # p = [tf.zeros((self.batch_size, nparams), dtype=tf.float32) for _ in range(self.nscales)]
         p = [tf.zeros((self.batch_size, 8), dtype=tf.float32) for _ in range(self.nscales)]
