@@ -18,10 +18,11 @@ def _to_grayscale(image: np.ndarray) -> np.ndarray:
     """
     Convert an image to grayscale with shape (ny, nx, 1).
 
-    Accepts:
-    - 2D array (ny, nx): returned as (ny, nx, 1)
-    - 3D array (ny, nx, 1): returned unchanged
-    - 3D array (ny, nx, 3): converted to grayscale using ITU-R BT.709 coefficients
+    Args:
+        image (np.ndarray): Input image. Accepted shapes:
+            - 2D array (ny, nx): returned as (ny, nx, 1)
+            - 3D array (ny, nx, 1): returned unchanged
+            - 3D array (ny, nx, 3): converted to grayscale using ITU-R BT.709 coefficients
 
     Returns:
         np.ndarray: Grayscale image with shape (ny, nx, 1).

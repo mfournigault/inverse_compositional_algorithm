@@ -20,20 +20,25 @@ def _tf_to_grayscale(images: tf.Tensor) -> tf.Tensor:
     """
     Convert a batch of images to grayscale with shape (batch, ny, nx, 1).
 
-    Accepts:
-    - (batch, ny, nx, 1): returned unchanged
-    - (batch, ny, nx, 3): converted to grayscale using tf.image.rgb_to_grayscale
-
     Args:
-        images (tf.Tensor): Batch of images with shape (batch, ny, nx, nz).
+        images (tf.Tensor): Batch of images. Accepted shapes:
+            - (batch, ny, nx, 1): returned unchanged
+            - (batch, ny, nx, 3): converted to grayscale using tf.image.rgb_to_grayscale
 
     Returns:
         tf.Tensor: Grayscale batch with shape (batch, ny, nx, 1).
+
+    Raises:
+        ValueError: If the number of channels is not 1 or 3.
     """
     nz = images.shape[-1]
     if nz == 3:
         return tf.image.rgb_to_grayscale(images)
-    return images
+    if nz == 1:
+        return images
+    raise ValueError(
+        f"Unsupported number of image channels: {nz}. Expected 1 (grayscale) or 3 (RGB)."
+    )
 
 
 def mark_boundaries_as_nan(tensor, delta):
